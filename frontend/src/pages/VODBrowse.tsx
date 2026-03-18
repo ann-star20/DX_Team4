@@ -32,6 +32,12 @@ export function VODBrowse() {
     });
   }, [setVodCatalog]);
 
+  // TV ON = 웹 첫 실행 → 자동 인사말 (PRD 4.1 시스템 트리거)
+  useEffect(() => {
+    const t = setTimeout(() => setState('conversation'), 600);
+    return () => clearTimeout(t);
+  }, [setState]);
+
   useKeyboardNav({
     onBack: () => state === 'conversation' && setState('vod_browse'),
   });

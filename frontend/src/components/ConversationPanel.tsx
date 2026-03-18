@@ -23,6 +23,12 @@ export function ConversationPanel({ onClose, onShowRecommend }: ConversationPane
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
+  // 첫 실행 시 인사말 TTS (TV ON = 웹 로드)
+  const GREETING = '안녕하세요! 오늘 하루 어땠어요? 편하게 이야기해 주세요.';
+  useEffect(() => {
+    if (chatHistory.length === 0) speak(GREETING);
+  }, [speak]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = input.trim();
