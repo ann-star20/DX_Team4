@@ -1,0 +1,186 @@
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: #09090f;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 20;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.5rem 1.25rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.logo-icon {
+  font-size: 1.5rem;
+  background: linear-gradient(135deg, #3b82f6, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.logo-text {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  background: linear-gradient(135deg, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.sidebar-nav {
+  padding: 1rem 0.75rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: #8b8fa8;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(124, 58, 237, 0.2));
+  color: #93c5fd;
+  border: 1px solid rgba(99, 155, 250, 0.25);
+}
+
+.nav-icon {
+  font-size: 1rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sidebar-divider {
+  margin: 0.5rem 1.25rem;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.sidebar-genre-label {
+  padding: 0.5rem 1.5rem 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4b5070;
+}
+
+.sidebar-genres {
+  padding: 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.genre-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: #8b8fa8;
+  font-size: 0.9rem;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s, color 0.15s;
+}
+
+.genre-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #c4c8e0;
+}
+
+.genre-item.active {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.genre-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #4b5070;
+}
+
+.genre-item.active .genre-dot {
+  background: #3b82f6;
+}
+
+.genre-dot--드라마  { background: #3b82f6; }
+.genre-dot--영화    { background: #7c3aed; }
+.genre-dot--예능    { background: #a855f7; }
+.genre-dot--로맨스  { background: #ec4899; }
+.genre-dot--멜로    { background: #f472b6; }
+.genre-dot--액션    { background: #ef4444; }
+.genre-dot--스릴러  { background: #f97316; }
+.genre-dot--다큐    { background: #14b8a6; }
+.genre-dot--전체    { background: linear-gradient(135deg, #3b82f6, #7c3aed); }
+
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 1rem 0.75rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.btn-ai-call {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #1d4ed8, #6d28d9);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: opacity 0.2s, transform 0.15s;
+  letter-spacing: -0.2px;
+}
+
+.btn-ai-call:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.ai-icon {
+  font-size: 1rem;
+}

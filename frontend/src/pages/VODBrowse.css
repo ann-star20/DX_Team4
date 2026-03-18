@@ -1,0 +1,142 @@
+/* ── Layout ─────────────────────────── */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  background: #08090f;
+  color: #e2e8f0;
+}
+
+.app-content {
+  margin-left: 220px;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ─────────────────────────── */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(8, 9, 15, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0.75rem 2rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Main ────────────────────────────── */
+.app-main {
+  flex: 1;
+  overflow-y: auto;
+  transition: opacity 0.3s, filter 0.3s;
+}
+
+.app-main--dimmed {
+  opacity: 0.35;
+  filter: brightness(0.5);
+  pointer-events: none;
+}
+
+/* ── Loading ──────────────────────────── */
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6rem 2rem;
+  gap: 1rem;
+  color: #4b5563;
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Search Results ───────────────────── */
+.search-result-section {
+  padding: 2rem;
+}
+
+.search-result-header {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #94a3b8;
+  margin-bottom: 1.5rem;
+}
+
+.search-keyword {
+  color: #93c5fd;
+  font-weight: 700;
+}
+
+.search-count {
+  margin-left: 0.75rem;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.search-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+
+.empty-msg {
+  color: #4b5563;
+  text-align: center;
+  padding: 3rem 0;
+}
+
+/* ── Recommend Empty ──────────────────── */
+.recommend-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+.recommend-empty-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.recommend-empty-desc {
+  color: #64748b;
+  font-size: 0.95rem;
+  margin: 0 0 1rem;
+}
+
+.btn-start-chat {
+  padding: 0.75rem 1.75rem;
+  background: linear-gradient(135deg, #1d4ed8, #6d28d9);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.btn-start-chat:hover {
+  opacity: 0.88;
+  transform: translateY(-2px);
+}
