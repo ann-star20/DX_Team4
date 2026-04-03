@@ -1,0 +1,371 @@
+"""
+FastAPI 엔트리포인트: /chat, /extract-memory 엔드포인트 + 정적 파일 서빙.
+"""
+
+import asyncio
+import logging
+import re
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+import httpx
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
+from google.cloud import texttospeech
+from pydantic import BaseModel
+
+from app.database import (
+    save_chat_message,
+    get_senior_profile,
+    get_weekly_reports,
+    log_intervention,
+    update_intervention_response,
+    get_recent_interventions,
+)
+from app.emotion import update_user_emotion, update_action_fatigue
+from app.memory_agent import extract_memories
+from app.rag import empathetic_chat
+from app.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ExtractedMemoryItem,
+    ExtractMemoryRequest,
+    ExtractMemoryResponse,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+app = FastAPI(
+    title="마음 - 시니어 감정 맞춤형 RAG 챗봇",
+    version="0.1.0",
+    description="60대 이상 독거 어르신을 위한 음성 기반 감정 맞춤형 말벗 챗봇 백엔드",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── POST /chat ───────────────────────────────────────────────────────
+
+_extract_lock = asyncio.Lock()
+
+async def _background_extract(user_id: str) -> None:
+    """응답 반환 후 백그라운드로 장기기억 추출."""
+    if _extract_lock.locked():
+        return
+    async with _extract_lock:
+        try:
+            extracted = await extract_memories(user_id=user_id, limit=50)
+            if extracted:
+                logger.info("백그라운드 기억 추출 완료: %d건", len(extracted))
+        except Exception:
+            logger.exception("백그라운드 기억 추출 실패")
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(req: ChatRequest, bg: BackgroundTasks):
+    """어르신 발화 → RAG 기반 공감형 답변 반환."""
+    try:
+        save_chat_message(req.user_id, role="user", content=req.message)
+    except Exception:
+        logger.exception("사용자 메시지 저장 실패")
+        raise HTTPException(status_code=502, detail="대화 저장에 실패했어요. 잠시 후 다시 시도해 주세요.")
+
+    try:
+        result = await empathetic_chat(
+            user_id=req.user_id,
+            message=req.message,
+            category=req.category,
+            emotion=req.emotion,
+            display_name=req.display_name,
+            gender=req.gender,
+            age=req.age,
+            avatar_id=req.avatar_id,
+        )
+    except Exception:
+        logger.exception("RAG 챗봇 응답 생성 실패")
+        raise HTTPException(status_code=502, detail="답변 생성에 실패했어요. 잠시 후 다시 시도해 주세요.")
+
+    try:
+        save_chat_message(req.user_id, role="assistant", content=result["answer"])
+    except Exception:
+        logger.exception("어시스턴트 메시지 저장 실패")
+
+    detected_emotion = result.get("detected_emotion", "중립")
+    try:
+        status = update_user_emotion(req.user_id, detected_emotion)
+        result["care_level"] = status["care_level"]
+        result["distress_score"] = status["distress_score"]
+        result["distress_score_daily"] = status["distress_score_daily"]
+    except Exception:
+        logger.exception("감정 점수 업데이트 실패")
+
+    bg.add_task(_background_extract, req.user_id)
+
+    return ChatResponse(**result)
+
+
+# ── POST /extract-memory ─────────────────────────────────────────────
+
+@app.post("/extract-memory", response_model=ExtractMemoryResponse)
+async def extract_memory_endpoint(req: ExtractMemoryRequest):
+    """단기 대화에서 장기 기억을 추출하여 벡터 DB에 저장한다."""
+    try:
+        extracted = await extract_memories(user_id=req.user_id, limit=req.limit)
+    except Exception:
+        logger.exception("기억 추출 파이프라인 실패")
+        raise HTTPException(status_code=502, detail="기억 추출에 실패했어요. 잠시 후 다시 시도해 주세요.")
+
+    memories = [ExtractedMemoryItem(**m) for m in extracted]
+    return ExtractMemoryResponse(
+        extracted_count=len(memories),
+        user_id=req.user_id,
+        memories=memories,
+    )
+
+
+# ── POST /tts ─────────────────────────────────────────────────────────
+
+class TtsRequest(BaseModel):
+    text: str
+
+_tts_client: texttospeech.TextToSpeechClient | None = None
+
+def _get_tts_client() -> texttospeech.TextToSpeechClient:
+    global _tts_client
+    if _tts_client is None:
+        _tts_client = texttospeech.TextToSpeechClient()
+    return _tts_client
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F600-\U0001F64F"  # emoticons
+    "\U0001F300-\U0001F5FF"  # symbols & pictographs
+    "\U0001F680-\U0001F6FF"  # transport & map
+    "\U0001F1E0-\U0001F1FF"  # flags
+    "\U0001F900-\U0001F9FF"  # supplemental symbols
+    "\U0001FA00-\U0001FA6F"  # chess symbols
+    "\U0001FA70-\U0001FAFF"  # symbols extended-A
+    "\U00002702-\U000027B0"  # dingbats
+    "\U0000FE00-\U0000FE0F"  # variation selectors
+    "\U0000200D"             # zero-width joiner
+    "\U000020E3"             # combining enclosing keycap
+    "\U00002600-\U000026FF"  # misc symbols
+    "\U0000231A-\U0000231B"
+    "\U00002934-\U00002935"
+    "\U000025AA-\U000025FE"
+    "\U00002B05-\U00002B55"
+    "\U00003030\U0000303D"
+    "\U00003297\U00003299"
+    "]+",
+    flags=re.UNICODE,
+)
+
+def _clean_text_for_tts(text: str) -> str:
+    """TTS 전에 이모지, 특수기호 등 음성으로 읽히면 어색한 문자를 제거한다."""
+    cleaned = _EMOJI_RE.sub("", text)
+    cleaned = re.sub(r"[*#_~`\[\](){}|]", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
+@app.post("/tts")
+async def tts_endpoint(req: TtsRequest):
+    """텍스트를 자연스러운 한국어 음성(MP3)으로 변환한다."""
+    try:
+        client = _get_tts_client()
+        clean_text = _clean_text_for_tts(req.text)
+        if not clean_text:
+            raise HTTPException(status_code=400, detail="읽을 텍스트가 없습니다.")
+        synthesis_input = texttospeech.SynthesisInput(text=clean_text)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="ko-KR",
+            name="ko-KR-Neural2-A",
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3,
+            speaking_rate=0.95,
+            pitch=1.0,
+        )
+        response = client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+        return Response(content=response.audio_content, media_type="audio/mpeg")
+    except Exception:
+        logger.exception("TTS 변환 실패")
+        raise HTTPException(status_code=502, detail="음성 변환에 실패했어요.")
+
+
+# ── GET /profile/{user_id} ────────────────────────────────────────────
+
+@app.get("/profile/{user_id}")
+async def get_profile(user_id: str):
+    """사용자 프로필 + 정서 상태 원스톱 조회."""
+    profile = get_senior_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없어요.")
+    return profile
+
+
+# ── GET /reports/{user_id} ───────────────────────────────────────────
+
+@app.get("/reports/{user_id}")
+async def get_reports(user_id: str, days: int = 7):
+    """최근 N일간 일간 케어 리포트 목록 조회."""
+    reports = get_weekly_reports(user_id, limit=days)
+    return {"user_id": user_id, "reports": reports}
+
+
+# ── POST /intervention ───────────────────────────────────────────────
+
+class InterventionRequest(BaseModel):
+    user_id: str
+    action_type: str
+    trigger_emotion: str | None = None
+    suggested_content: str | None = None
+
+class InterventionFeedback(BaseModel):
+    user_id: str
+    action_id: int
+    user_response: str
+
+@app.post("/intervention")
+async def create_intervention(req: InterventionRequest):
+    """행동 개입을 기록한다 (VOD_추천, 음악_재생, 스트레칭_제안 등)."""
+    try:
+        record = log_intervention(
+            user_id=req.user_id,
+            action_type=req.action_type,
+            trigger_emotion=req.trigger_emotion,
+            suggested_content=req.suggested_content,
+        )
+        return {"status": "logged", "action": record}
+    except Exception:
+        logger.exception("행동 개입 기록 실패")
+        raise HTTPException(status_code=502, detail="행동 개입 기록 실패")
+
+
+@app.post("/intervention/feedback")
+async def intervention_feedback(req: InterventionFeedback):
+    """행동 개입에 대한 사용자 반응을 기록하고 추천 피로도를 갱신한다."""
+    try:
+        result = update_intervention_response(req.action_id, req.user_response)
+        fatigue = update_action_fatigue(req.user_id, req.user_response)
+        return {"status": "updated", "action": result, "action_fatigue": fatigue}
+    except Exception:
+        logger.exception("행동 개입 피드백 실패")
+        raise HTTPException(status_code=502, detail="피드백 기록 실패")
+
+
+# ── GET /interventions/{user_id} ─────────────────────────────────────
+
+@app.get("/interventions/{user_id}")
+async def list_interventions(user_id: str, limit: int = 10):
+    """최근 행동 개입 이력 조회."""
+    records = get_recent_interventions(user_id, limit=limit)
+    return {"user_id": user_id, "interventions": records}
+
+
+# ── GET /weather ──────────────────────────────────────────────────────
+
+KMA_AUTH_KEY = "a_c5KbU5TUq3OSm1OU1Kjg"
+KMA_BASE_URL = "https://apihub.kma.go.kr/api/typ01/url/kma_sfctm2.php"
+KST = timezone(timedelta(hours=9))
+SEOUL_STN = 108
+
+@app.get("/weather")
+async def weather_endpoint():
+    """서울 현재 날씨 (기상청 API) — 기온, 습도, 강수량."""
+    now_kst = datetime.now(KST)
+    errors = []
+
+    def _safe_float(v: str) -> float | None:
+        try:
+            f = float(v)
+            return None if f <= -9 else f
+        except Exception:
+            return None
+
+    def _parse_weather_text(text: str, station: int) -> dict | None:
+        """KMA 원문 텍스트에서 해당 관측소 1건을 파싱한다."""
+        station_str = str(station)
+        for raw in text.strip().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            # 정상 데이터는 대체로 최소 16개 컬럼을 가진다.
+            if len(parts) < 16:
+                continue
+            # [YYMMDDHHMI, STN, ...] 형태를 가정
+            stn = parts[1]
+            if stn != station_str:
+                continue
+            return {
+                "temperature": _safe_float(parts[11]),
+                "humidity": _safe_float(parts[13]),
+                "precipitation": _safe_float(parts[15]),
+            }
+        return None
+
+    for hours_back in range(0, 4):
+        t = now_kst - timedelta(hours=hours_back)
+        tm = t.strftime("%Y%m%d%H00")
+        url = f"{KMA_BASE_URL}?tm={tm}&stn={SEOUL_STN}&help=0&authKey={KMA_AUTH_KEY}"
+
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                text = resp.text
+
+            parsed = _parse_weather_text(text, SEOUL_STN)
+            if parsed is not None:
+                return {
+                    "station": "서울",
+                    "time": tm,
+                    "temperature": parsed["temperature"],
+                    "humidity": parsed["humidity"],
+                    "precipitation": parsed["precipitation"],
+                }
+            # 예외가 없어도 데이터 포맷이 달라 파싱이 안 되는 경우를 로깅에 남긴다.
+            preview = " ".join(text.strip().splitlines()[:2])[:160]
+            errors.append(f"{tm}: parse_miss preview='{preview}'")
+        except Exception as e:
+            errors.append(f"{tm}: {e}")
+            continue
+
+    logger.warning("날씨 데이터 조회 실패: %s", errors)
+    return {
+        "station": "서울",
+        "time": now_kst.strftime("%Y%m%d%H00"),
+        "temperature": None,
+        "humidity": None,
+        "precipitation": None,
+    }
+
+
+# ── Health Check ─────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+# ── Frontend ─────────────────────────────────────────────────────────
+
+@app.get("/")
+async def index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

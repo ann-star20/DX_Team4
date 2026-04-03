@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>마음 — AI 손주</title>
+<style>
+:root {
+  --primary: #e87f5f;
+  --primary-light: #fdf0ec;
+  --bg: #f5f0eb;
+  --surface: #ffffff;
+  --text: #3a3330;
+  --text-light: #8a8280;
+  --bot-bubble: #fff7f0;
+  --user-bubble: #e87f5f;
+  --green: #4caf50;
+  --yellow: #ffc107;
+  --red: #f44336;
+  --radius: 16px;
+  --shadow: 0 2px 16px rgba(0,0,0,0.07);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Apple SD Gothic Neo','Noto Sans KR',-apple-system,sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ── 3-Column Layout ─────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr) minmax(0, 540px);
+  grid-template-rows: 1fr;
+  height: 100dvh;
+  gap: 0;
+  width: 100%;
+  max-width: 100vw;
+  overflow: hidden;
+}
+
+/* ── Left Panel ──────────────────────────── */
+.left-panel {
+  background: var(--surface);
+  border-right: 1px solid #e8e0da;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.photo-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: #e8e0da;
+  overflow: hidden;
+  cursor: pointer;
+}
+.photo-frame img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.photo-frame .placeholder {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; color: var(--text-light); font-size: 14px;
+}
+.photo-frame .placeholder span { font-size: 40px; margin-bottom: 8px; }
+.photo-frame input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+
+.weather-card {
+  margin: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+.weather-card .title { font-weight: 700; margin-bottom: 10px; font-size: 15px; }
+.weather-row { display: flex; justify-content: space-between; padding: 4px 0; }
+.weather-val { font-weight: 700; }
+
+.schedule-card {
+  margin: 0 12px 12px;
+  padding: 16px;
+  background: #fff8e1;
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+.schedule-card .title-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.schedule-card .title-row .title { font-weight: 700; font-size: 15px; }
+.schedule-card .title-row .add-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 2px dashed #ccc; background: transparent;
+  font-size: 18px; color: #aaa; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.schedule-card .title-row .add-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+.schedule-list { display: flex; flex-direction: column; gap: 2px; }
+
+.schedule-item {
+  padding: 6px 4px; display: flex; align-items: center; gap: 8px;
+  border-radius: 8px; transition: background .15s;
+}
+.schedule-item:hover { background: rgba(0,0,0,0.04); }
+.schedule-item .sch-time {
+  min-width: 50px; font-weight: 600; font-size: 13px; color: var(--primary);
+}
+.schedule-item .sch-text { flex: 1; }
+.schedule-item .sch-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.schedule-item:hover .sch-actions { opacity: 1; }
+.sch-actions button {
+  width: 24px; height: 24px; border: none; background: transparent;
+  border-radius: 4px; cursor: pointer; font-size: 13px; color: #999;
+}
+.sch-actions button:hover { background: rgba(0,0,0,0.08); color: var(--text); }
+
+.schedule-form {
+  display: none; flex-direction: column; gap: 8px;
+  margin-top: 10px; padding: 10px; background: #fff;
+  border-radius: 10px; border: 1px solid #e8e0da;
+}
+.schedule-form.open { display: flex; }
+.schedule-form .form-row { display: flex; gap: 6px; align-items: center; }
+.schedule-form input[type="time"] {
+  border: 1px solid #ddd; border-radius: 8px; padding: 6px 8px;
+  font-size: 14px; font-family: inherit; width: 100px;
+}
+.schedule-form .sch-desc-input {
+  flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 6px 10px;
+  font-size: 14px; font-family: inherit; outline: none;
+}
+.schedule-form .sch-desc-input:focus { border-color: var(--primary); }
+.schedule-form .form-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.schedule-form .form-btns button {
+  padding: 6px 14px; border: none; border-radius: 8px;
+  font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.schedule-form .btn-save { background: var(--primary); color: #fff; }
+.schedule-form .btn-save:hover { opacity: .9; }
+.schedule-form .btn-cancel { background: #eee; color: #666; }
+.schedule-form .btn-cancel:hover { background: #ddd; }
+.schedule-form .btn-mic {
+  width: 32px; height: 32px; border: none; border-radius: 50%;
+  background: #f5f5f5; font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.schedule-form .btn-mic:hover { background: #ffe0d6; }
+.schedule-form .btn-mic.rec { background: var(--red); color: #fff; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
+
+.schedule-empty {
+  text-align: center; padding: 12px; color: #bbb; font-size: 13px;
+}
+
+.left-panel .user-id-section {
+  margin: auto 12px 12px;
+  padding: 12px;
+  background: var(--primary-light);
+  border-radius: var(--radius);
+  font-size: 13px;
+  display: flex; align-items: center; gap: 8px;
+}
+.left-panel .user-id-section input {
+  flex: 1; border: 1px solid #ddd; border-radius: 8px;
+  padding: 6px 10px; font-size: 13px; background: white;
+}
+.profile-row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; margin-bottom: 6px;
+}
+.profile-summary {
+  font-size: 12px; color: var(--text-light); margin-bottom: 8px; line-height: 1.4;
+  width: 100%;
+}
+.text-btn {
+  border: none; background: none; color: var(--primary);
+  font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline;
+  font-family: inherit; padding: 0;
+}
+.text-btn:hover { opacity: 0.85; }
+
+/* ── Onboarding modal ───────────────────── */
+.onboarding-modal {
+  display: none;
+  position: fixed; inset: 0; z-index: 10000;
+  align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(58,51,48,0.45);
+}
+.onboarding-modal.open { display: flex; }
+.onboarding-card {
+  background: var(--surface);
+  border-radius: 20px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+  max-width: 420px; width: 100%;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding: 24px 22px 20px;
+}
+.onboarding-card h2 {
+  font-size: 18px; margin-bottom: 6px; text-align: center;
+}
+.onboarding-card .sub {
+  font-size: 13px; color: var(--text-light); text-align: center; margin-bottom: 20px;
+}
+.ob-field { margin-bottom: 14px; }
+.ob-field label {
+  display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;
+}
+.ob-field input[type="text"],
+.ob-field input[type="number"],
+.ob-field select {
+  width: 100%; border: 1px solid #ddd; border-radius: 10px;
+  padding: 10px 12px; font-size: 15px; font-family: inherit;
+}
+.ob-field input:focus, .ob-field select:focus {
+  outline: none; border-color: var(--primary);
+}
+.avatar-picker {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.avatar-choice {
+  border: 3px solid transparent; border-radius: 14px;
+  padding: 6px; cursor: pointer; background: var(--bg);
+  transition: border-color .2s, transform .15s;
+}
+.avatar-choice:hover { transform: scale(1.03); }
+.avatar-choice.selected { border-color: var(--primary); background: var(--primary-light); }
+.avatar-choice img {
+  width: 100%; height: auto; display: block; border-radius: 10px;
+}
+.avatar-choice span {
+  display: block; text-align: center; font-size: 11px; margin-top: 4px; color: var(--text-light);
+}
+.ob-error { color: var(--red); font-size: 12px; margin-top: 8px; min-height: 18px; }
+.ob-actions {
+  display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end;
+}
+.ob-actions button {
+  padding: 10px 18px; border-radius: 10px; font-size: 14px;
+  font-family: inherit; cursor: pointer; border: none;
+}
+.ob-actions .btn-secondary { background: #eee; color: #555; }
+.ob-actions .btn-secondary:hover { background: #ddd; }
+.ob-actions .btn-primary { background: var(--primary); color: #fff; }
+.ob-actions .btn-primary:hover { opacity: 0.92; }
+.ob-actions .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Center Panel (Avatar) ───────────────── */
+.center-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: radial-gradient(ellipse at center, #fff8f0 0%, var(--bg) 70%);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.care-indicator {
+  position: absolute;
+  top: 20px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface);
+  padding: 8px 20px;
+  border-radius: 30px;
+  box-shadow: var(--shadow);
+  font-size: 14px; font-weight: 600;
+}
+.care-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid #ccc;
+  transition: all 0.3s;
+}
+.care-dot.active-green { background: var(--green); border-color: var(--green); box-shadow: 0 0 8px var(--green); }
+.care-dot.active-yellow { background: var(--yellow); border-color: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+.care-dot.active-red { background: var(--red); border-color: var(--red); box-shadow: 0 0 8px var(--red); }
+
+.avatar-area {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 16px;
+}
+
+.avatar-stage {
+  position: relative;
+  width: min(840px, 100%);
+  max-width: 100%;
+}
+
+.avatar-mouth {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  width: 38%;
+  height: auto;
+  transform: translate(-50%, -50%) scaleY(0.9);
+  opacity: 0;
+  z-index: 3;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.10));
+}
+
+.avatar-stage.talking .avatar-mouth {
+  opacity: 1;
+  animation: mouthTalk 0.18s ease-in-out infinite alternate;
+}
+
+@keyframes mouthTalk {
+  from { transform: translate(-50%, -50%) scaleY(0.9); }
+  to { transform: translate(-50%, -50%) scaleY(1.15); }
+}
+
+.avatar-img {
+  width: min(840px, 100%);
+  height: auto;
+  max-height: min(70dvh, 840px);
+  object-fit: contain;
+  animation: float 4s ease-in-out infinite;
+  filter: drop-shadow(0 8px 24px rgba(232,127,95,0.18));
+}
+@keyframes float {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.care-message {
+  max-width: 380px;
+  padding: 16px 24px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 15px; line-height: 1.6;
+  text-align: center;
+  color: var(--text);
+}
+
+.subtitle-area {
+  position: absolute;
+  bottom: 20px;
+  left: 50%; transform: translateX(-50%);
+  width: 80%; max-width: 500px;
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 16px;
+  text-align: center;
+  display: none;
+  line-height: 1.5;
+}
+.subtitle-area.visible { display: block; }
+
+/* ── Right Panel (Chat) ──────────────────── */
+.right-panel {
+  background: var(--surface);
+  border-left: 1px solid #e8e0da;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e8e0da;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.chat-header h2 { font-size: 16px; }
+.chat-header .toggle-btns { display: flex; gap: 8px; }
+.icon-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary-light);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.icon-btn:hover { background: #fdddd1; }
+.icon-btn.active { background: var(--primary); color: white; }
+
+.chat-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.msg {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.msg.bot { align-self: flex-start; }
+.msg.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+  max-width: min(100%, 92%);
+}
+.msg .bubble {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.msg.bot .bubble {
+  background: var(--bot-bubble);
+  border-bottom-left-radius: 4px;
+}
+.msg.user .bubble {
+  background: var(--user-bubble);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.alert-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 700;
+  margin-bottom: 4px;
+}
+.alert-badge.depression { background: #ffcdd2; color: #c62828; }
+.alert-badge.anger { background: #fff3e0; color: #e65100; }
+
+.memories-tag {
+  font-size: 11px; color: var(--text-light);
+  margin-top: 6px; cursor: pointer;
+}
+.memories-tag:hover { text-decoration: underline; }
+.memories-detail {
+  display: none;
+  font-size: 11px;
+  color: var(--text-light);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.memories-detail.open { display: block; }
+
+.typing-indicator {
+  display: flex; gap: 8px; align-items: center; padding: 8px 0;
+}
+.dots span {
+  width: 8px; height: 8px; background: #ccc; border-radius: 50%;
+  display: inline-block; animation: bounce 1.4s infinite;
+}
+.dots span:nth-child(2) { animation-delay: 0.2s; }
+.dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%,80%,100% { transform: scale(0.6); }
+  40% { transform: scale(1); }
+}
+
+.input-bar {
+  padding: 12px 16px;
+  border-top: 1px solid #e8e0da;
+  display: flex; gap: 8px; align-items: flex-end;
+  min-width: 0;
+  flex-shrink: 0;
+}
+.input-bar textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  max-height: 100px;
+  line-height: 1.4;
+}
+.input-bar textarea:focus { border-color: var(--primary); }
+
+.send-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.send-btn:disabled { opacity: 0.5; }
+
+.voice-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  background: white;
+  color: var(--primary);
+  font-size: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.voice-btn.recording {
+  background: var(--red);
+  border-color: var(--red);
+  color: white;
+  animation: pulse 1s infinite;
+}
+@keyframes pulse { 50% { transform: scale(1.08); } }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ══ Left Panel ══ -->
+  <div class="left-panel">
+    <div class="photo-frame" id="photoFrame">
+      <div class="placeholder" id="photoPlaceholder">
+        <span>📷</span>사진을 눌러 추가하세요
+      </div>
+      <img id="photoImg" style="display:none" alt="가족 사진">
+      <input type="file" id="photoInput" accept="image/*">
+    </div>
+
+    <div class="weather-card" id="weatherCard">
+      <div class="title">🌤 서울 날씨</div>
+      <div class="weather-row"><span>기온</span><span class="weather-val" id="wTemp">--</span></div>
+      <div class="weather-row"><span>습도</span><span class="weather-val" id="wHum">--</span></div>
+      <div class="weather-row"><span>강수</span><span class="weather-val" id="wRain">--</span></div>
+    </div>
+
+    <div class="schedule-card" id="scheduleCard">
+      <div class="title-row">
+        <div class="title">🗓 루틴 / 일정</div>
+        <button class="add-btn" id="schAddBtn" title="일정 추가">+</button>
+      </div>
+      <div class="schedule-list" id="scheduleList"></div>
+      <div class="schedule-form" id="scheduleForm">
+        <div class="form-row">
+          <input type="time" id="schTimeInput" value="09:00">
+          <input type="text" class="sch-desc-input" id="schDescInput" placeholder="예: 아침 약 복용">
+          <button class="btn-mic" id="schMicBtn" title="음성으로 입력">🎤</button>
+        </div>
+        <div class="form-btns">
+          <button class="btn-cancel" id="schCancelBtn">취소</button>
+          <button class="btn-save" id="schSaveBtn">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="user-id-section" style="flex-direction:column;align-items:stretch;">
+      <div class="profile-row">
+        <span>👤 내 정보</span>
+        <button type="button" class="text-btn" id="editProfileBtn">수정</button>
+      </div>
+      <div class="profile-summary" id="profileSummary"></div>
+      <input type="text" id="userId" value="user_001" placeholder="사용자마다 다른 ID (예: user_kim)" title="DB에 대화·기억이 이 ID로 구분됩니다">
+    </div>
+  </div>
+
+  <!-- ══ Center Panel (Avatar) ══ -->
+  <div class="center-panel">
+    <div class="care-indicator">
+      <div class="care-dot" id="dotG"></div>
+      <div class="care-dot" id="dotY"></div>
+      <div class="care-dot" id="dotR"></div>
+      <span id="careLevelText">정상</span>
+    </div>
+
+    <div class="avatar-area">
+      <div class="avatar-stage" id="avatarStage">
+        <img src="/static/avatar.png" class="avatar-img" id="avatarImg" alt="말벗 캐릭터">
+        <img src="/static/mouths/mouth_boy.png" class="avatar-mouth" id="avatarMouthImg" alt="" aria-hidden="true">
+      </div>
+      <div class="care-message" id="careMessage">
+        안녕하세요, 어르신! 오늘도 좋은 하루 보내세요.
+      </div>
+    </div>
+
+    <div class="subtitle-area" id="subtitle"></div>
+  </div>
+
+  <!-- ══ Right Panel (Chat) ══ -->
+  <div class="right-panel">
+    <div class="chat-header">
+      <h2>대화</h2>
+      <div class="toggle-btns">
+        <button class="icon-btn active" id="ttsBtn" title="음성 ON/OFF">🔊</button>
+      </div>
+    </div>
+
+    <div class="chat-area" id="chatArea">
+      <div class="msg bot">
+        <div class="bubble" id="welcomeBubble">안녕하세요, 어르신! 오늘 하루는 어떠셨어요? 편하게 말씀해 주세요.</div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <button class="voice-btn" id="voiceBtn" title="음성 입력">🎤</button>
+      <textarea id="msgInput" rows="1" placeholder="여기에 말씀해 주세요…"></textarea>
+      <button class="send-btn" id="sendBtn" title="보내기">➤</button>
+    </div>
+  </div>
+</div>
+
+<div class="onboarding-modal" id="onboardingModal" role="dialog" aria-labelledby="obTitle" aria-modal="true">
+  <div class="onboarding-card">
+    <h2 id="obTitle">시작하기</h2>
+    <p class="sub">이름·성별·나이와 말벗 캐릭터를 정해 주세요.</p>
+    <div class="ob-field">
+      <label for="profName">이름</label>
+      <input type="text" id="profName" maxlength="40" placeholder="예: 김순자" autocomplete="name">
+    </div>
+    <div class="ob-field">
+      <label for="profGender">성별</label>
+      <select id="profGender">
+        <option value="">선택해 주세요</option>
+        <option value="남성">남성</option>
+        <option value="여성">여성</option>
+        <option value="기타">기타 / 밝히고 싶지 않음</option>
+      </select>
+    </div>
+    <div class="ob-field">
+      <label for="profAge">나이 (만 나이)</label>
+      <input type="number" id="profAge" min="1" max="120" placeholder="예: 72">
+    </div>
+    <div class="ob-field">
+      <label>말벗 캐릭터</label>
+      <div class="avatar-picker" id="avatarPicker">
+        <button type="button" class="avatar-choice selected" data-avatar="boy" title="소년">
+          <img src="/static/avatar.png" alt="">
+          <span>소년</span>
+        </button>
+        <button type="button" class="avatar-choice" data-avatar="girl" title="소녀">
+          <img src="/static/avatar_girl.png" alt="">
+          <span>소녀</span>
+        </button>
+        <button type="button" class="avatar-choice" data-avatar="dog" title="강아지">
+          <img src="/static/avatars/dog.svg" alt="">
+          <span>강아지</span>
+        </button>
+        <button type="button" class="avatar-choice" data-avatar="cat" title="고양이">
+          <img src="/static/avatars/cat.svg" alt="">
+          <span>고양이</span>
+        </button>
+        <button type="button" class="avatar-choice" data-avatar="robot" title="로봇">
+          <img src="/static/avatars/robot.svg" alt="">
+          <span>로봇</span>
+        </button>
+      </div>
+    </div>
+    <div class="ob-error" id="obError"></div>
+    <div class="ob-actions">
+      <button type="button" class="btn-secondary" id="obCancelBtn" style="display:none;">취소</button>
+      <button type="button" class="btn-primary" id="obSubmitBtn">저장하고 시작</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+const PROFILES_STORE_KEY = 'maumProfiles';
+const LEGACY_PROFILE_KEY = 'maumUserProfile';
+
+const AVATAR_PATHS = {
+  boy: '/static/avatar.png',
+  girl: '/static/avatar_girl.png',
+  dog: '/static/avatars/dog.svg',
+  cat: '/static/avatars/cat.svg',
+  robot: '/static/avatars/robot.svg',
+};
+
+const AVATAR_MOUTH_PATHS = {
+  boy: '/static/mouths/mouth_boy.png',
+  girl: '/static/mouths/mouth_girl.png',
+  dog: '/static/mouths/mouth_dog.png',
+  cat: '/static/mouths/mouth_cat.png',
+  robot: '/static/mouths/mouth_robot.png',
+};
+
+function currentUserId() {
+  const el = document.getElementById('userId');
+  const v = el && el.value.trim();
+  return v || 'user_001';
+}
+
+function loadAllProfiles() {
+  try {
+    const raw = localStorage.getItem(PROFILES_STORE_KEY);
+    if (raw) return JSON.parse(raw);
+    const legacy = localStorage.getItem(LEGACY_PROFILE_KEY);
+    if (legacy) {
+      const p = JSON.parse(legacy);
+      const m = { user_001: p };
+      localStorage.setItem(PROFILES_STORE_KEY, JSON.stringify(m));
+      localStorage.removeItem(LEGACY_PROFILE_KEY);
+      return m;
+    }
+  } catch (e) { /* ignore */ }
+  return {};
+}
+
+function getProfile() {
+  const uid = currentUserId();
+  const all = loadAllProfiles();
+  return all[uid] || {};
+}
+
+function saveProfile(p) {
+  const uid = currentUserId();
+  const all = loadAllProfiles();
+  all[uid] = { ...(all[uid] || {}), ...p };
+  localStorage.setItem(PROFILES_STORE_KEY, JSON.stringify(all));
+}
+
+let selectedAvatarId = 'boy';
+let onboardingEditMode = false;
+
+const onboardingModal = document.getElementById('onboardingModal');
+const profName = document.getElementById('profName');
+const profGender = document.getElementById('profGender');
+const profAge = document.getElementById('profAge');
+const obError = document.getElementById('obError');
+const obSubmitBtn = document.getElementById('obSubmitBtn');
+const obCancelBtn = document.getElementById('obCancelBtn');
+const editProfileBtn = document.getElementById('editProfileBtn');
+const profileSummary = document.getElementById('profileSummary');
+const avatarStage = document.getElementById('avatarStage');
+const avatarImg = document.getElementById('avatarImg');
+const avatarMouthImg = document.getElementById('avatarMouthImg');
+
+document.querySelectorAll('.avatar-choice').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.avatar-choice').forEach((b) => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedAvatarId = btn.dataset.avatar || 'boy';
+  });
+});
+
+function openOnboarding(editMode) {
+  onboardingEditMode = !!editMode;
+  obCancelBtn.style.display = onboardingEditMode ? 'inline-block' : 'none';
+  obSubmitBtn.textContent = onboardingEditMode ? '저장' : '저장하고 시작';
+  const p = getProfile();
+  profName.value = p.displayName || '';
+  profGender.value = p.gender || '';
+  profAge.value = p.age != null ? p.age : '';
+  selectedAvatarId = (p.avatarId && AVATAR_PATHS[p.avatarId]) ? p.avatarId : 'boy';
+  document.querySelectorAll('.avatar-choice').forEach((b) => {
+    b.classList.toggle('selected', b.dataset.avatar === selectedAvatarId);
+  });
+  obError.textContent = '';
+  onboardingModal.classList.add('open');
+  profName.focus();
+}
+
+function closeOnboarding() {
+  onboardingModal.classList.remove('open');
+}
+
+function validateProfile() {
+  const name = profName.value.trim();
+  if (!name) return '이름을 입력해 주세요.';
+  if (!profGender.value) return '성별을 선택해 주세요.';
+  const age = parseInt(profAge.value, 10);
+  if (!Number.isFinite(age) || age < 1 || age > 120) return '나이는 1~120 사이 숫자로 입력해 주세요.';
+  return '';
+}
+
+function applyProfileToUI() {
+  const p = getProfile();
+  if (p.avatarId && AVATAR_PATHS[p.avatarId]) {
+    avatarImg.src = AVATAR_PATHS[p.avatarId];
+  } else {
+    avatarImg.src = AVATAR_PATHS.boy;
+  }
+
+  if (avatarMouthImg) {
+    if (p.avatarId && AVATAR_MOUTH_PATHS[p.avatarId]) {
+      avatarMouthImg.src = AVATAR_MOUTH_PATHS[p.avatarId];
+    } else {
+      avatarMouthImg.src = AVATAR_MOUTH_PATHS.boy;
+    }
+  }
+
+  const cm = document.getElementById('careMessage');
+  const wb = document.getElementById('welcomeBubble');
+  if (p.setupComplete && p.displayName) {
+    profileSummary.textContent = `${p.displayName} 님 · ${p.gender || '-'} · ${p.age != null ? p.age + '세' : '-'}`;
+    if (wb) wb.textContent = `${p.displayName} 님, 안녕하세요! 오늘 하루는 어떠셨어요? 편하게 말씀해 주세요.`;
+    const honor = p.gender === '남성' ? '할아버지' : (p.gender === '여성' ? '할머니' : '어르신');
+    if (cm) cm.textContent = `${p.displayName} ${honor}, 오늘도 좋은 하루 보내세요.`;
+  } else {
+    profileSummary.textContent = '';
+    if (wb) wb.textContent = '안녕하세요, 어르신! 오늘 하루는 어떠셨어요? 편하게 말씀해 주세요.';
+    if (cm) cm.textContent = '안녕하세요, 어르신! 오늘도 좋은 하루 보내세요.';
+  }
+}
+
+function resetChatForCurrentUser() {
+  const ca = document.getElementById('chatArea');
+  if (!ca) return;
+  ca.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'msg bot';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.id = 'welcomeBubble';
+  const p = getProfile();
+  bubble.textContent = (p.setupComplete && p.displayName)
+    ? `${p.displayName} 님, 안녕하세요! 오늘 하루는 어떠셨어요? 편하게 말씀해 주세요.`
+    : '안녕하세요, 어르신! 오늘 하루는 어떠셨어요? 편하게 말씀해 주세요.';
+  wrap.appendChild(bubble);
+  ca.appendChild(wrap);
+}
+
+function profilePayloadForChat() {
+  const p = getProfile();
+  if (!p.setupComplete) return {};
+  const age = parseInt(p.age, 10);
+  return {
+    display_name: p.displayName || null,
+    gender: p.gender || null,
+    age: Number.isFinite(age) ? age : null,
+    avatar_id: p.avatarId || null,
+  };
+}
+
+obSubmitBtn.addEventListener('click', () => {
+  const err = validateProfile();
+  if (err) { obError.textContent = err; return; }
+  const age = parseInt(profAge.value, 10);
+  saveProfile({
+    displayName: profName.value.trim(),
+    gender: profGender.value,
+    age,
+    avatarId: selectedAvatarId,
+    setupComplete: true,
+  });
+  applyProfileToUI();
+  closeOnboarding();
+});
+
+obCancelBtn.addEventListener('click', closeOnboarding);
+editProfileBtn.addEventListener('click', () => openOnboarding(true));
+
+if (getProfile().setupComplete) {
+  applyProfileToUI();
+} else {
+  openOnboarding(false);
+}
+
+const chatArea = document.getElementById('chatArea');
+const msgInput = document.getElementById('msgInput');
+const sendBtn = document.getElementById('sendBtn');
+const voiceBtn = document.getElementById('voiceBtn');
+const ttsBtn = document.getElementById('ttsBtn');
+const userIdEl = document.getElementById('userId');
+userIdEl.addEventListener('change', () => {
+  resetChatForCurrentUser();
+  applyProfileToUI();
+  loadProfile();
+});
+const subtitle = document.getElementById('subtitle');
+const careMessage = document.getElementById('careMessage');
+const careLevelText = document.getElementById('careLevelText');
+const dotG = document.getElementById('dotG');
+const dotY = document.getElementById('dotY');
+const dotR = document.getElementById('dotR');
+
+let ttsEnabled = true;
+let currentAudio = null;
+
+// ── Photo upload ─────────────────────────
+const photoInput = document.getElementById('photoInput');
+const photoImg = document.getElementById('photoImg');
+const photoPlaceholder = document.getElementById('photoPlaceholder');
+
+const saved = localStorage.getItem('familyPhoto');
+if (saved) { photoImg.src = saved; photoImg.style.display='block'; photoPlaceholder.style.display='none'; }
+
+photoInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    photoImg.src = ev.target.result;
+    photoImg.style.display = 'block';
+    photoPlaceholder.style.display = 'none';
+    localStorage.setItem('familyPhoto', ev.target.result);
+  };
+  reader.readAsDataURL(file);
+});
+
+// ── Schedule CRUD ────────────────────────
+const scheduleList = document.getElementById('scheduleList');
+const scheduleForm = document.getElementById('scheduleForm');
+const schAddBtn = document.getElementById('schAddBtn');
+const schSaveBtn = document.getElementById('schSaveBtn');
+const schCancelBtn = document.getElementById('schCancelBtn');
+const schTimeInput = document.getElementById('schTimeInput');
+const schDescInput = document.getElementById('schDescInput');
+const schMicBtn = document.getElementById('schMicBtn');
+
+let scheduleData = JSON.parse(localStorage.getItem('scheduleItems') || 'null');
+if (!scheduleData) {
+  scheduleData = [
+    { id: Date.now(), time: '09:00', desc: '아침 약 복용' },
+    { id: Date.now()+1, time: '13:00', desc: '점심 후 산책' },
+    { id: Date.now()+2, time: '18:00', desc: '저녁 약 복용' },
+  ];
+  localStorage.setItem('scheduleItems', JSON.stringify(scheduleData));
+}
+
+let editingSchId = null;
+
+function renderSchedule() {
+  scheduleList.innerHTML = '';
+  if (scheduleData.length === 0) {
+    scheduleList.innerHTML = '<div class="schedule-empty">등록된 일정이 없습니다</div>';
+    return;
+  }
+  const sorted = [...scheduleData].sort((a,b) => a.time.localeCompare(b.time));
+  sorted.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'schedule-item';
+    el.innerHTML = `
+      <span class="sch-time">${item.time}</span>
+      <span class="sch-text">${item.desc}</span>
+      <span class="sch-actions">
+        <button data-id="${item.id}" class="sch-edit" title="수정">✏️</button>
+        <button data-id="${item.id}" class="sch-del" title="삭제">✕</button>
+      </span>`;
+    scheduleList.appendChild(el);
+  });
+
+  scheduleList.querySelectorAll('.sch-edit').forEach(btn => {
+    btn.addEventListener('click', () => startEdit(Number(btn.dataset.id)));
+  });
+  scheduleList.querySelectorAll('.sch-del').forEach(btn => {
+    btn.addEventListener('click', () => deleteSchedule(Number(btn.dataset.id)));
+  });
+}
+
+function saveScheduleData() {
+  localStorage.setItem('scheduleItems', JSON.stringify(scheduleData));
+}
+
+function openForm(time, desc) {
+  schTimeInput.value = time || '09:00';
+  schDescInput.value = desc || '';
+  scheduleForm.classList.add('open');
+  schDescInput.focus();
+}
+
+function closeForm() {
+  scheduleForm.classList.remove('open');
+  editingSchId = null;
+  schDescInput.value = '';
+}
+
+schAddBtn.addEventListener('click', () => {
+  editingSchId = null;
+  openForm('09:00', '');
+});
+
+schCancelBtn.addEventListener('click', closeForm);
+
+schSaveBtn.addEventListener('click', () => {
+  const time = schTimeInput.value;
+  const desc = schDescInput.value.trim();
+  if (!desc) { schDescInput.focus(); return; }
+  if (editingSchId !== null) {
+    const item = scheduleData.find(s => s.id === editingSchId);
+    if (item) { item.time = time; item.desc = desc; }
+  } else {
+    scheduleData.push({ id: Date.now(), time, desc });
+  }
+  saveScheduleData();
+  renderSchedule();
+  closeForm();
+});
+
+schDescInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); schSaveBtn.click(); }
+  if (e.key === 'Escape') closeForm();
+});
+
+function startEdit(id) {
+  const item = scheduleData.find(s => s.id === id);
+  if (!item) return;
+  editingSchId = id;
+  openForm(item.time, item.desc);
+}
+
+function deleteSchedule(id) {
+  scheduleData = scheduleData.filter(s => s.id !== id);
+  saveScheduleData();
+  renderSchedule();
+}
+
+// Schedule voice input (separate STT instance)
+let schRecognition = null, schRecording = false;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  schRecognition = new SR();
+  schRecognition.lang = 'ko-KR';
+  schRecognition.interimResults = true;
+  schRecognition.continuous = false;
+
+  schRecognition.onresult = (e) => {
+    const t = Array.from(e.results).map(r => r[0].transcript).join('');
+    schDescInput.value = t;
+  };
+  schRecognition.onend = () => {
+    schRecording = false;
+    schMicBtn.classList.remove('rec');
+  };
+  schRecognition.onerror = () => {
+    schRecording = false;
+    schMicBtn.classList.remove('rec');
+  };
+}
+
+schMicBtn.addEventListener('click', () => {
+  if (!schRecognition) { alert('Chrome 브라우저를 사용해 주세요.'); return; }
+  if (schRecording) {
+    schRecognition.stop();
+  } else {
+    if (!scheduleForm.classList.contains('open')) openForm('09:00', '');
+    schDescInput.value = '';
+    schRecording = true;
+    schMicBtn.classList.add('rec');
+    schRecognition.start();
+  }
+});
+
+renderSchedule();
+
+// ── Weather ──────────────────────────────
+async function loadWeather() {
+  try {
+    const r = await fetch(`${API}/weather`);
+    const d = await r.json();
+    document.getElementById('wTemp').textContent = d.temperature != null ? d.temperature + '°C' : '--';
+    document.getElementById('wHum').textContent = d.humidity != null ? d.humidity + '%' : '--';
+    document.getElementById('wRain').textContent = d.precipitation != null ? d.precipitation + 'mm' : '없음';
+  } catch(e) { console.error('Weather fetch fail', e); }
+}
+loadWeather();
+setInterval(loadWeather, 600000);
+
+// ── Care Level indicator ─────────────────
+function updateCareLevel(level) {
+  dotG.className = 'care-dot';
+  dotY.className = 'care-dot';
+  dotR.className = 'care-dot';
+  if (level === 'NORMAL') {
+    dotG.classList.add('active-green');
+    careLevelText.textContent = '정상';
+  } else if (level === 'WARNING') {
+    dotY.classList.add('active-yellow');
+    careLevelText.textContent = '주의';
+  } else if (level === 'DANGER') {
+    dotR.classList.add('active-red');
+    careLevelText.textContent = '위험';
+  }
+}
+updateCareLevel('NORMAL');
+
+// ── Auto-resize textarea ─────────────────
+msgInput.addEventListener('input', () => {
+  msgInput.style.height = 'auto';
+  msgInput.style.height = Math.min(msgInput.scrollHeight, 100) + 'px';
+});
+
+// ── Send message ─────────────────────────
+sendBtn.addEventListener('click', () => sendMessage('manual'));
+msgInput.addEventListener('keydown', (e) => {
+  // IME(한글 조합) 중 Enter는 전송하지 않는다.
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage('manual');
+  }
+});
+
+let lastSentAt = 0;
+let lastSentText = '';
+
+function shouldSkipAsNoise(text, source) {
+  if (!text) return true;
+  if (source === 'stt' && text.length <= 1) return true;
+  if (source === 'stt' && text === lastSentText && (Date.now() - lastSentAt) < 1800) return true;
+  return false;
+}
+
+async function sendMessage(source = 'manual') {
+  const text = msgInput.value.trim();
+  if (shouldSkipAsNoise(text, source)) {
+    if (source === 'stt') {
+      msgInput.value = '';
+      msgInput.style.height = 'auto';
+    }
+    return;
+  }
+  appendMsg('user', text);
+  msgInput.value = '';
+  msgInput.style.height = 'auto';
+  lastSentText = text;
+  lastSentAt = Date.now();
+  sendBtn.disabled = true;
+  const typing = showTyping();
+
+  try {
+    const res = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        user_id: userIdEl.value.trim() || 'user_001',
+        message: text,
+        ...profilePayloadForChat(),
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    typing.remove();
+    appendBotMsg(data);
+    if (data.care_level) updateCareLevel(data.care_level);
+    updateCareMessage(data.care_level, data.detected_emotion);
+  } catch (err) {
+    typing.remove();
+    appendMsg('bot', '앗, 답변을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.');
+    console.error(err);
+  } finally {
+    sendBtn.disabled = false;
+    msgInput.focus();
+  }
+}
+
+function updateCareMessage(level, emotion) {
+  const msgs = {
+    NORMAL: [
+      '오늘도 좋은 하루 보내고 계시네요!',
+      '식사하시고 따뜻한 물 한잔 드시는 거 잊지 마세요!',
+      '기분 좋은 하루가 되셨으면 좋겠어요.',
+    ],
+    WARNING: [
+      '어르신, 제가 곁에 있을게요. 편하게 말씀해 주세요.',
+      '기분이 좀 안 좋으신 것 같아요. 좋아하시는 음악 들으실래요?',
+    ],
+    DANGER: [
+      '많이 힘드셨죠. 보호자님께 연락을 남겨두었어요. 곧 전화가 올 거예요.',
+    ],
+  };
+  const pool = msgs[level] || msgs.NORMAL;
+  careMessage.textContent = pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ── Render messages ──────────────────────
+function appendMsg(role, text) {
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+  chatArea.appendChild(wrap);
+  scrollToBottom();
+}
+
+function appendBotMsg(data) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg bot';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  if (data.alert) {
+    const badge = document.createElement('div');
+    badge.className = `alert-badge ${data.alert.toLowerCase()}`;
+    const labels = { DEPRESSION: '우울 감지', ANGER: '분노 감지' };
+    badge.textContent = `⚠ ${labels[data.alert] || data.alert}`;
+    bubble.appendChild(badge);
+  }
+
+  const textNode = document.createElement('div');
+  textNode.textContent = data.answer;
+  bubble.appendChild(textNode);
+
+  if (data.retrieved_memories && data.retrieved_memories.length > 0) {
+    const tag = document.createElement('div');
+    tag.className = 'memories-tag';
+    tag.textContent = `📌 참고 기억 ${data.retrieved_memories.length}건 보기`;
+    const detail = document.createElement('div');
+    detail.className = 'memories-detail';
+    detail.innerHTML = data.retrieved_memories.map(m => `• ${m}`).join('<br>');
+    tag.addEventListener('click', () => detail.classList.toggle('open'));
+    bubble.appendChild(tag);
+    bubble.appendChild(detail);
+  }
+
+  wrap.appendChild(bubble);
+  chatArea.appendChild(wrap);
+  scrollToBottom();
+
+  showSubtitle(data.answer);
+  if (ttsEnabled) speak(data.answer);
+}
+
+function showTyping() {
+  const el = document.createElement('div');
+  el.className = 'typing-indicator';
+  el.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
+  chatArea.appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
+function scrollToBottom() {
+  requestAnimationFrame(() => { chatArea.scrollTop = chatArea.scrollHeight; });
+}
+
+// ── Subtitle ─────────────────────────────
+function showSubtitle(text) {
+  subtitle.textContent = text;
+  subtitle.classList.add('visible');
+  clearTimeout(subtitle._timer);
+  subtitle._timer = setTimeout(() => subtitle.classList.remove('visible'), 8000);
+}
+
+// ── TTS (Google Cloud) ───────────────────
+ttsBtn.addEventListener('click', () => {
+  ttsEnabled = !ttsEnabled;
+  ttsBtn.classList.toggle('active', ttsEnabled);
+  if (!ttsEnabled && currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+    if (avatarStage) avatarStage.classList.remove('talking');
+  }
+});
+
+async function speak(text) {
+  if (!text) return;
+  try {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+    }
+    if (avatarStage) avatarStage.classList.remove('talking');
+    const res = await fetch(`${API}/tts`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text}),
+    });
+    if (!res.ok) throw new Error(`TTS ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
+    if (avatarStage) avatarStage.classList.add('talking');
+    currentAudio.onended = () => {
+      URL.revokeObjectURL(url);
+      currentAudio = null;
+      if (avatarStage) avatarStage.classList.remove('talking');
+    };
+    currentAudio.play();
+  } catch(err) {
+    console.error('TTS fail:', err);
+    if ('speechSynthesis' in window) {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ko-KR'; u.rate = 0.9;
+      if (avatarStage) avatarStage.classList.add('talking');
+      u.onend = () => { if (avatarStage) avatarStage.classList.remove('talking'); };
+      window.speechSynthesis.speak(u);
+    }
+  }
+}
+
+// ── STT (Speech-to-Text) ────────────────
+let recognition = null, isRecording = false;
+let sttTranscript = '';
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'ko-KR';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onresult = (e) => {
+    const t = Array.from(e.results).map(r => r[0].transcript).join('');
+    const finals = Array.from(e.results).filter(r => r.isFinal).map(r => r[0].transcript).join('');
+    sttTranscript = (finals || t).trim();
+    msgInput.value = sttTranscript;
+    msgInput.style.height = 'auto';
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 100) + 'px';
+  };
+  recognition.onend = () => {
+    isRecording = false;
+    voiceBtn.classList.remove('recording');
+    if (sttTranscript) {
+      msgInput.value = sttTranscript;
+      sendMessage('stt');
+    }
+    sttTranscript = '';
+  };
+  recognition.onerror = (e) => {
+    isRecording = false;
+    voiceBtn.classList.remove('recording');
+    if (e.error !== 'no-speech') console.error('STT:', e.error);
+  };
+}
+
+voiceBtn.addEventListener('click', () => {
+  if (!recognition) { alert('Chrome 브라우저를 사용해 주세요.'); return; }
+  if (isRecording) { recognition.stop(); }
+  else {
+    msgInput.value = '';
+    sttTranscript = '';
+    isRecording = true;
+    voiceBtn.classList.add('recording');
+    recognition.start();
+  }
+});
+
+// ── Load profile on start ────────────────
+async function loadProfile() {
+  try {
+    const r = await fetch(`${API}/profile/${userIdEl.value.trim() || 'user_001'}`);
+    if (r.ok) {
+      const p = await r.json();
+      if (p.care_level) updateCareLevel(p.care_level);
+    }
+  } catch(e) {}
+}
+loadProfile();
+</script>
+</body>
+</html>
