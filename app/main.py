@@ -9,10 +9,11 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from google.api_core import exceptions as gcp_exceptions
 from google.cloud import texttospeech
 from pydantic import BaseModel
 
@@ -27,6 +28,8 @@ from app.database import (
 from app.emotion import update_user_emotion, update_action_fatigue
 from app.memory_agent import extract_memories
 from app.rag import empathetic_chat
+from app.stt import transcribe_bytes
+from app.reminiscence import build_morning_brief
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -205,6 +208,42 @@ async def tts_endpoint(req: TtsRequest):
         raise HTTPException(status_code=502, detail="음성 변환에 실패했어요.")
 
 
+# ── POST /stt ─────────────────────────────────────────────────────────
+
+@app.post("/stt")
+async def stt_endpoint(
+    audio: UploadFile = File(..., description="녹음 파일 (권장: WebM/Opus 또는 WAV PCM)"),
+    language_code: str = Form("ko-KR"),
+    sample_rate_hertz: int = Form(48000),
+):
+    """Google Cloud Speech-to-Text — 어르신 발화를 텍스트로 변환 (latest_long 모델)."""
+    body = await audio.read()
+    if not body:
+        raise HTTPException(status_code=400, detail="녹음 데이터가 비어 있습니다.")
+    try:
+        text = await asyncio.to_thread(
+            transcribe_bytes,
+            body,
+            content_type=audio.content_type,
+            language_code=language_code,
+            sample_rate_hertz=sample_rate_hertz,
+        )
+    except gcp_exceptions.GoogleAPIError as e:
+        logger.exception("Speech-to-Text API 오류")
+        msg = getattr(e, "message", None) or str(e)
+        raise HTTPException(
+            status_code=502,
+            detail=f"음성 인식 서비스 오류입니다. GCP에서 Speech-to-Text API 사용 설정과 결제·권한을 확인해 주세요. ({msg})",
+        )
+    except Exception:
+        logger.exception("음성 인식 실패")
+        raise HTTPException(
+            status_code=502,
+            detail="음성 인식에 실패했어요. 잠시 후 다시 시도해 주세요.",
+        )
+    return {"text": text, "language_code": language_code}
+
+
 # ── GET /profile/{user_id} ────────────────────────────────────────────
 
 @app.get("/profile/{user_id}")
@@ -214,6 +253,29 @@ async def get_profile(user_id: str):
     if not profile:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없어요.")
     return profile
+
+
+@app.get("/morning-brief/{user_id}")
+async def morning_brief(
+    user_id: str,
+    min_importance: int = 7,
+    memory_limit: int = 250,
+    max_memories: int = 8,
+):
+    """
+    아침 TV/안내용: effective_distress가 WARNING(41~79)이면 행복·고중요도 회상 후보,
+    DANGER(80+)이면 caregiver_alert + 오늘 일간 리포트 requires_check.
+    별도 테이블 없이 long_term_memory를 조건 필터한다.
+    """
+    data = build_morning_brief(
+        user_id,
+        min_importance=min_importance,
+        memory_fetch_limit=memory_limit,
+        max_memories=max_memories,
+    )
+    if data.get("error") == "no_profile":
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없어요.")
+    return data
 
 
 # ── GET /reports/{user_id} ───────────────────────────────────────────
@@ -323,7 +385,7 @@ async def weather_endpoint():
         url = f"{KMA_BASE_URL}?tm={tm}&stn={SEOUL_STN}&help=0&authKey={KMA_AUTH_KEY}"
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 text = resp.text

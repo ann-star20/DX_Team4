@@ -11,6 +11,7 @@ langchain-postgres>=0.0.13
 
 # Google Cloud
 google-cloud-aiplatform>=1.74.0
+google-cloud-speech>=2.26.0
 
 # Database
 sqlalchemy>=2.0.36
@@ -19,3 +20,4 @@ pgvector>=0.3.6
 
 # Supabase (optional direct client)
 supabase>=2.11.0
+python-multipart>=0.0.9

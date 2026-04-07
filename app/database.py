@@ -4,6 +4,7 @@ IPv6 전용 DB에서도 문제없이 동작한다.
 """
 
 import logging
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -18,9 +19,26 @@ logger = logging.getLogger(__name__)
 _client: Client | None = None
 
 
+def _disable_proxy_env_for_backend() -> None:
+    """
+    로컬 프록시(HTTP_PROXY/HTTPS_PROXY)가 켜져 있으면
+    Supabase PostgREST 요청이 403 ProxyError로 실패할 수 있어 비활성화한다.
+    """
+    for key in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        os.environ.pop(key, None)
+
+
 def get_supabase() -> Client:
     global _client
     if _client is None:
+        _disable_proxy_env_for_backend()
         settings = get_settings()
         _client = create_client(settings.supabase_url, settings.supabase_key)
     return _client
@@ -83,6 +101,20 @@ def save_long_term_memory(
     }
     result = sb.table("long_term_memory").insert(row).execute()
     return result.data[0] if result.data else row
+
+
+def list_recent_memories(user_id: str, limit: int = 300) -> list[dict]:
+    """회상 후보 선별 등: 최근 장기기억을 memory_date 내림차순으로 가져온다."""
+    sb = get_supabase()
+    result = (
+        sb.table("long_term_memory")
+        .select("id, content, memory_date, metadata")
+        .eq("user_id", user_id)
+        .order("memory_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
 
 
 # ── Senior Profile CRUD ──────────────────────────────────────────────
