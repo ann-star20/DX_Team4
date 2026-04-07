@@ -65,6 +65,18 @@ def _compute_care_level(score: float) -> str:
     return "NORMAL"
 
 
+def compute_effective_distress_from_profile(profile: dict) -> tuple[float, str]:
+    """
+    저장된 senior_profile로 effective 점수와 care_level을 재계산한다.
+    (update_user_emotion 시점의 공식과 동일: distress + clamp(session))
+    """
+    distress = float(profile.get("distress_score") or 0)
+    session = float(profile.get("current_session_score") or 0)
+    s = _clamp(session, SESSION_SCORE_MIN, SESSION_SCORE_MAX)
+    effective = _clamp(distress + s, DISTRESS_MIN, DISTRESS_MAX)
+    return effective, _compute_care_level(effective)
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
