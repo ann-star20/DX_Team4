@@ -21,11 +21,14 @@ from app.database import (
     save_chat_message,
     get_senior_profile,
     get_weekly_reports,
+    list_daily_sentiment_stats,
+    list_recent_memories,
     log_intervention,
     update_intervention_response,
     get_recent_interventions,
 )
 from app.emotion import update_user_emotion, update_action_fatigue
+from app.kobart_memory_agent import extract_memories_kobart
 from app.memory_agent import extract_memories
 from app.rag import empathetic_chat
 from app.stt import transcribe_bytes
@@ -34,6 +37,7 @@ from app.schemas import (
     ChatRequest,
     ChatResponse,
     ExtractedMemoryItem,
+    ExtractionResult,
     ExtractMemoryRequest,
     ExtractMemoryResponse,
 )
@@ -136,10 +140,48 @@ async def extract_memory_endpoint(req: ExtractMemoryRequest):
     )
 
 
-# ── POST /tts ─────────────────────────────────────────────────────────
+class KobartExtractRequest(BaseModel):
+    user_id: str | None = None
+    limit: int = 50
+    save_to_db: bool = True
+    mark_extracted_after_save: bool = True
+    compare_with_llm: bool = True
+    store_comparison_stats: bool = True
+    source_mode: str = "unextracted"  # unextracted | extracted
+    model_id: str = "gogamza/kobart-summarization"
+
 
 class TtsRequest(BaseModel):
     text: str
+
+
+@app.post("/extract-memory-kobart", response_model=ExtractionResult)
+async def extract_memory_kobart_endpoint(req: KobartExtractRequest):
+    """
+    KoBART 기반 장기기억 추출 실험 엔드포인트.
+    source_mode=extracted 로 주면 short_term_history(is_extracted=true)를 기준으로 비교한다.
+    """
+    try:
+        result = await extract_memories_kobart(
+            user_id=req.user_id,
+            limit=req.limit,
+            save_to_db=req.save_to_db,
+            mark_extracted_after_save=req.mark_extracted_after_save,
+            compare_with_llm=req.compare_with_llm,
+            store_comparison_stats=req.store_comparison_stats,
+            source_mode=req.source_mode,
+            model_id=req.model_id,
+        )
+        return ExtractionResult.model_validate(result)
+    except Exception:
+        logger.exception("KoBART 기억 추출 파이프라인 실패")
+        raise HTTPException(
+            status_code=502,
+            detail="KoBART 기억 추출에 실패했어요. 모델/의존성/환경을 확인해 주세요.",
+        )
+
+
+# ── POST /tts ─────────────────────────────────────────────────────────
 
 _tts_client: texttospeech.TextToSpeechClient | None = None
 
@@ -285,6 +327,52 @@ async def get_reports(user_id: str, days: int = 7):
     """최근 N일간 일간 케어 리포트 목록 조회."""
     reports = get_weekly_reports(user_id, limit=days)
     return {"user_id": user_id, "reports": reports}
+
+
+@app.get("/memory-benchmark/{user_id}")
+async def memory_benchmark(user_id: str, days: int = 7):
+    """
+    KoBART vs LLM 비교 요약 조회.
+    - daily_sentiment_stats의 kobart_vs_llm 지표 시계열
+    - long_term_memory 최근 메모리 source별 건수
+    """
+    stats = list_daily_sentiment_stats(user_id, limit=max(1, min(days, 60)))
+    trend: list[dict] = []
+    for s in stats:
+        dist = s.get("emotion_distribution") or {}
+        if dist.get("source") != "kobart_vs_llm":
+            continue
+        trend.append(
+            {
+                "report_date": s.get("report_date"),
+                "kobart_memory_count": dist.get("kobart_memory_count"),
+                "llm_memory_count": dist.get("llm_memory_count"),
+                "avg_keyword_overlap_jaccard": dist.get("avg_keyword_overlap_jaccard"),
+                "avg_importance_gap": dist.get("avg_importance_gap"),
+                "model_id": dist.get("model_id"),
+                "total_utterance": s.get("total_utterance"),
+            }
+        )
+
+    memories = list_recent_memories(user_id, limit=300)
+    source_counts: dict[str, int] = {}
+    for m in memories:
+        meta = m.get("metadata") or {}
+        src = meta.get("source") or "legacy"
+        source_counts[src] = source_counts.get(src, 0) + 1
+
+    latest = trend[0] if trend else None
+    return {
+        "user_id": user_id,
+        "days": days,
+        "latest": latest,
+        "trend": trend,
+        "long_term_memory_source_counts": source_counts,
+        "notes": {
+            "avg_keyword_overlap_jaccard": "KoBART 요약 vs LLM 추출 키워드 자카드 평균",
+            "avg_importance_gap": "KoBART 중요도와 LLM 평균 중요도 차이(낮을수록 유사)",
+        },
+    }
 
 
 # ── POST /intervention ───────────────────────────────────────────────

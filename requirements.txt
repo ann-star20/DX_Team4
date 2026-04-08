@@ -21,3 +21,7 @@ pgvector>=0.3.6
 # Supabase (optional direct client)
 supabase>=2.11.0
 python-multipart>=0.0.9
+
+# KoBART local extraction (optional experiment)
+transformers>=4.40.0
+sentencepiece>=0.2.0

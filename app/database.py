@@ -75,6 +75,24 @@ def get_unextracted_conversations(
     return result.data or []
 
 
+def get_extracted_conversations(
+    user_id: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    sb = get_supabase()
+    query = (
+        sb.table("short_term_history")
+        .select("*")
+        .eq("is_extracted", True)
+        .order("chat_time", desc=False)
+        .limit(limit)
+    )
+    if user_id:
+        query = query.eq("user_id", user_id)
+    result = query.execute()
+    return result.data or []
+
+
 def mark_as_extracted(chat_ids: list[str]) -> None:
     sb = get_supabase()
     sb.table("short_term_history").update(
@@ -166,6 +184,51 @@ def get_weekly_reports(user_id: str, limit: int = 7) -> list[dict]:
     sb = get_supabase()
     result = (
         sb.table("daily_care_report")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("report_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+# ── Daily Sentiment Stats CRUD ───────────────────────────────────────
+
+def get_daily_sentiment_stat(user_id: str, report_date: str) -> dict | None:
+    sb = get_supabase()
+    result = (
+        sb.table("daily_sentiment_stats")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("report_date", report_date)
+        .order("stat_id", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def upsert_daily_sentiment_stat(user_id: str, report_date: str, data: dict) -> dict:
+    sb = get_supabase()
+    existing = get_daily_sentiment_stat(user_id, report_date)
+    if existing:
+        result = (
+            sb.table("daily_sentiment_stats")
+            .update(data)
+            .eq("stat_id", existing["stat_id"])
+            .execute()
+        )
+    else:
+        row = {"user_id": user_id, "report_date": report_date, **data}
+        result = sb.table("daily_sentiment_stats").insert(row).execute()
+    return result.data[0] if result.data else data
+
+
+def list_daily_sentiment_stats(user_id: str, limit: int = 14) -> list[dict]:
+    sb = get_supabase()
+    result = (
+        sb.table("daily_sentiment_stats")
         .select("*")
         .eq("user_id", user_id)
         .order("report_date", desc=True)

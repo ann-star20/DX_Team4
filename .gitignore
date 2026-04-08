@@ -21,3 +21,6 @@ __pycache__/
 # Logs / misc
 *.log
 *.tmp
+
+# Hugging Face / KoBART model cache (local)
+.hf_cache/
