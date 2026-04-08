@@ -584,6 +584,219 @@ body {
   cursor: pointer; transition: opacity 0.2s;
 }
 .schedule-alarm-btn:hover { opacity: 0.9; }
+
+/* ── Emotion Report Button ───────────── */
+.report-trigger-btn {
+  position: absolute;
+  bottom: 24px; right: 24px;
+  padding: 12px 22px;
+  border: none; border-radius: 30px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px; font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(232,127,95,0.35);
+  transition: transform 0.2s, box-shadow 0.2s;
+  z-index: 10;
+}
+.report-trigger-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(232,127,95,0.45);
+}
+
+/* ── Emotion Report Modal ────────────── */
+.report-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 10001;
+  background: rgba(58,51,48,0.5);
+  align-items: center; justify-content: center;
+  padding: 20px;
+  animation: fadeInOverlay 0.3s ease;
+}
+.report-overlay.open { display: flex; }
+
+.report-card {
+  background: var(--bg);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  max-width: 680px; width: 100%;
+  max-height: 88dvh;
+  overflow: hidden;
+  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex; flex-direction: column;
+}
+.report-body-scroll {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.report-body-scroll::-webkit-scrollbar { width: 6px; }
+.report-body-scroll::-webkit-scrollbar-thumb { background: #d4ccc6; border-radius: 4px; }
+.report-body-scroll::-webkit-scrollbar-track { background: transparent; }
+
+.report-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  border-bottom: 1px solid #e8e0da;
+  flex-shrink: 0;
+}
+.report-header-left { display: flex; align-items: center; gap: 12px; }
+.report-header-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--primary-light);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.report-header-name { font-size: 16px; font-weight: 700; }
+.report-header-sub { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.report-grade-badge {
+  padding: 6px 14px; border-radius: 20px;
+  font-size: 12px; font-weight: 700;
+}
+.report-grade-badge.normal { background: #e8f5e9; color: #2e7d32; }
+.report-grade-badge.warning { background: #fff3e0; color: #e65100; }
+.report-grade-badge.danger { background: #ffebee; color: #c62828; }
+
+.report-body { padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+.report-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+}
+.report-section-title {
+  font-size: 14px; font-weight: 700; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 6px;
+}
+.report-section-title .icon { font-size: 16px; }
+.report-section-sub { font-size: 11px; color: var(--text-light); margin-left: auto; }
+
+/* Bar Chart */
+.bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 100px; padding-top: 8px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.bar-fill {
+  width: 100%; border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, var(--primary), #f4a68c);
+  min-height: 0; height: 0;
+  transition: height 0.6s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.bar-col.today .bar-fill { background: linear-gradient(180deg, #d4603a, var(--primary)); }
+.bar-label { font-size: 11px; color: var(--text-light); }
+
+/* Donut Charts Row */
+.donut-row {
+  display: flex; gap: 16px; align-items: center; justify-content: space-around;
+}
+.donut-item { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; }
+.donut-wrap { position: relative; width: 90px; height: 90px; }
+.donut-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.donut-wrap svg circle.donut-progress {
+  transition: stroke-dasharray 0.8s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+.donut-center {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: var(--text);
+}
+.donut-center { transition: opacity 0.3s; }
+.donut-label { font-size: 13px; font-weight: 700; text-align: center; }
+.donut-desc { font-size: 11px; color: var(--text-light); text-align: center; line-height: 1.4; }
+
+/* Masked Index + Activity Row */
+.metric-row { display: flex; gap: 12px; }
+.metric-row > * { flex: 1; }
+
+.masked-card {
+  background: linear-gradient(135deg, #5a3e2b, #8b5e3c);
+  border-radius: var(--radius);
+  padding: 18px;
+  color: #fff;
+}
+.masked-card .label {
+  font-size: 12px; font-weight: 600; margin-bottom: 10px; opacity: 0.9;
+  display: flex; align-items: center; gap: 4px;
+}
+.masked-score { display: flex; align-items: baseline; gap: 4px; margin-bottom: 8px; }
+.masked-score .big { font-size: 36px; font-weight: 800; }
+.masked-score .unit { font-size: 14px; opacity: 0.7; }
+.masked-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.2); margin-bottom: 10px; }
+.masked-bar-fill {
+  height: 100%; border-radius: 3px; background: var(--primary);
+  width: 0; transition: width 0.8s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+.masked-desc { font-size: 11px; opacity: 0.8; line-height: 1.5; }
+
+.activity-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+}
+.activity-card .label {
+  font-size: 12px; font-weight: 600; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 4px;
+}
+.activity-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; font-size: 13px;
+}
+.activity-row .a-icon { font-size: 15px; width: 20px; text-align: center; }
+.activity-row .a-label { flex: 1; color: var(--text-light); }
+.activity-row .a-val { font-weight: 700; }
+
+/* Tabs */
+.report-tabs {
+  display: flex; border-bottom: 2px solid #e8e0da;
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  overflow: hidden;
+}
+.report-tab {
+  flex: 1; padding: 12px 0;
+  border: none; background: transparent;
+  font-size: 13px; font-weight: 600; font-family: inherit;
+  color: var(--text-light); cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px; transition: all 0.2s;
+}
+.report-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.report-tab:hover { color: var(--text); }
+
+.report-advice {
+  background: var(--surface);
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 20px;
+}
+.report-advice-quote {
+  font-size: 16px; font-weight: 700; line-height: 1.5;
+  color: var(--text); margin-bottom: 10px;
+}
+.report-advice-body {
+  font-size: 13px; color: var(--text-light); line-height: 1.7;
+  margin-bottom: 16px;
+  border-left: 3px solid var(--primary-light);
+  padding-left: 12px;
+}
+.report-advice-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 20px; border: none; border-radius: 24px;
+  background: var(--primary); color: #fff;
+  font-size: 13px; font-weight: 700; font-family: inherit;
+  cursor: pointer; transition: opacity 0.2s;
+}
+.report-advice-btn:hover { opacity: 0.9; }
+
+.report-close-btn {
+  width: 32px; height: 32px; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.06); font-size: 18px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: var(--text-light); transition: background 0.2s;
+  flex-shrink: 0; margin-left: 8px;
+}
+.report-close-btn:hover { background: rgba(0,0,0,0.12); }
 </style>
 </head>
 <body>
@@ -655,6 +868,7 @@ body {
     </div>
 
     <div class="subtitle-area" id="subtitle"></div>
+    <button class="report-trigger-btn" id="reportTriggerBtn">📊 나의 감정 리포트</button>
   </div>
 
   <!-- ══ Right Panel (Chat) ══ -->
@@ -741,6 +955,87 @@ body {
     <div class="schedule-alarm-time" id="alarmTime"></div>
     <div class="schedule-alarm-desc" id="alarmDesc"></div>
     <button class="schedule-alarm-btn" id="alarmDismissBtn">확인</button>
+  </div>
+</div>
+
+<div class="report-overlay" id="reportOverlay">
+  <div class="report-card">
+    <div class="report-header">
+      <div class="report-header-left">
+        <div class="report-header-avatar">👤</div>
+        <div>
+          <div class="report-header-name" id="reportUserName">김순자 어르신</div>
+          <div class="report-header-sub" id="reportLastChat">마지막 대화: 오늘 15:30</div>
+        </div>
+      </div>
+      <div class="report-grade-badge warning" id="reportGradeBadge">등급: 주의</div>
+      <button class="report-close-btn" id="reportCloseBtn">✕</button>
+    </div>
+
+    <div class="report-body-scroll">
+    <div class="report-body">
+      <!-- 주간 정서 피로도 -->
+      <div class="report-section">
+        <div class="report-section-title">
+          <span class="icon">📈</span> 주간 정서 피로도 변화
+          <span class="report-section-sub">최근 7일 기준</span>
+        </div>
+        <div class="bar-chart" id="reportBarChart"></div>
+      </div>
+
+      <!-- 감정 분포 비교 -->
+      <div class="report-section">
+        <div class="report-section-title">
+          <span class="icon">📅</span> 감정 분포 비교
+        </div>
+        <div class="donut-row">
+          <div class="donut-item">
+            <div class="donut-wrap" id="donutToday"></div>
+            <div class="donut-label">오늘의 감정</div>
+            <div class="donut-desc" id="donutTodayDesc">평소보다 슬픔 비율이 높습니다.</div>
+          </div>
+          <div class="donut-item">
+            <div class="donut-wrap" id="donutMonth"></div>
+            <div class="donut-label">최근 한 달 감정</div>
+            <div class="donut-desc" id="donutMonthDesc">대체로 긍정적인 상태를 유지했습니다.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 정서 불일치 지수 + 생활 활성도 -->
+      <div class="metric-row">
+        <div class="masked-card">
+          <div class="label">⚡ 정서 불일치 지수 (Masked Index)</div>
+          <div class="masked-score">
+            <span class="big" id="maskedScore">7.2</span>
+            <span class="unit">/ 10.0</span>
+          </div>
+          <div class="masked-bar"><div class="masked-bar-fill" id="maskedBarFill" style="width:72%"></div></div>
+          <div class="masked-desc" id="maskedDesc">대화 내용은 긍정적이나 목소리 톤이 가라앉아 있습니다. 겉으로 표현하지 못한 스트레스가 있을 수 있습니다.</div>
+        </div>
+        <div class="activity-card">
+          <div class="label">🔄 생활 활성도 지표</div>
+          <div class="activity-row"><span class="a-icon">💬</span><span class="a-label">대화량</span><span class="a-val" id="actChat">42</span></div>
+          <div class="activity-row"><span class="a-icon">🕐</span><span class="a-label">피크 시간</span><span class="a-val" id="actPeak">오전 11:00</span></div>
+          <div class="activity-row"><span class="a-icon">⚡</span><span class="a-label">응답 속도</span><span class="a-val" id="actSpeed">2.4초</span></div>
+        </div>
+      </div>
+
+      <!-- 탭 + 조언 -->
+      <div>
+        <div class="report-tabs">
+          <button class="report-tab" data-tab="senior">어르신용</button>
+          <button class="report-tab active" data-tab="family">자녀용</button>
+          <button class="report-tab" data-tab="welfare">복지사용</button>
+        </div>
+        <div class="report-advice" id="reportAdvice">
+          <div class="report-advice-quote" id="adviceQuote">"부모님의 목소리에 귀 기울여 주세요."</div>
+          <div class="report-advice-body" id="adviceBody">최근 3일간 정서 피로도가 상승하고 있습니다. 대화 내용은 긍정적이지만 목소리에 슬픔이 섞인 '정서 불일치' 현상이 관찰됩니다. 오늘 밤에는 부모님께 안부 전화를 드려 "오늘 기분은 어떠세요?"라고 다정하게 물어봐 주세요.</div>
+          <button class="report-advice-btn" id="adviceActionBtn">어머니께 바로 전화하기 ➜</button>
+        </div>
+      </div>
+    </div>
+    </div>
   </div>
 </div>
 
@@ -1462,6 +1757,150 @@ voiceBtn.addEventListener('click', () => {
     voiceBtn.classList.add('recording');
     recognition.start();
   }
+});
+
+// ── Emotion Report ───────────────────────
+const reportOverlay = document.getElementById('reportOverlay');
+const reportTriggerBtn = document.getElementById('reportTriggerBtn');
+const reportCloseBtn = document.getElementById('reportCloseBtn');
+
+const REPORT_DUMMY = {
+  userName: null,
+  lastChat: '오늘 15:30',
+  grade: 'WARNING',
+  weeklyFatigue: [3, 5, 4, 6, 7, 5, 8],
+  weekLabels: ['월', '화', '수', '목', '금', '토', '오늘'],
+  todayPositive: 30,
+  monthPositive: 45,
+  todayDesc: '평소보다 슬픔 비율이 높습니다.',
+  monthDesc: '대체로 긍정적인 상태를 유지했습니다.',
+  maskedIndex: 7.2,
+  maskedDesc: '대화 내용은 긍정적이나 목소리 톤이 가라앉아 있습니다. 겉으로 표현하지 못한 스트레스가 있을 수 있습니다.',
+  chatCount: 42,
+  peakTime: '오전 11:00',
+  responseSpeed: '2.4초',
+  advice: {
+    senior: {
+      quote: '"오늘도 참 잘 하고 계세요."',
+      body: '요즘 대화하시면서 가끔 힘든 마음이 보여요. 하지만 매일 꾸준히 대화해 주시는 모습이 정말 대단하세요. 좋아하시는 음악을 들으며 잠시 쉬어보시는 건 어떨까요?',
+      btn: '좋아하는 음악 듣기 ➜',
+    },
+    family: {
+      quote: '"부모님의 목소리에 귀 기울여 주세요."',
+      body: '최근 3일간 정서 피로도가 상승하고 있습니다. 대화 내용은 긍정적이지만 목소리에 슬픔이 섞인 \'정서 불일치\' 현상이 관찰됩니다. 오늘 밤에는 부모님께 안부 전화를 드려 "오늘 기분은 어떠세요?"라고 다정하게 물어봐 주세요.',
+      btn: '어머니께 바로 전화하기 ➜',
+    },
+    welfare: {
+      quote: '"정기적인 모니터링이 필요합니다."',
+      body: '대상자의 정서 불일치 지수가 7.2로 높은 편입니다. 표면적 대화는 긍정적이나 내면 정서 피로가 누적되고 있어, 주 1회 이상 정서 상담을 권장합니다. 가족과의 소통 빈도도 점검이 필요합니다.',
+      btn: '상담 일정 잡기 ➜',
+    },
+  },
+};
+
+function createDonut(container, percent, color) {
+  const r = 36, c = 2 * Math.PI * r;
+  container.innerHTML = `
+    <svg viewBox="0 0 90 90">
+      <circle cx="45" cy="45" r="${r}" fill="none" stroke="#f0ebe6" stroke-width="10"/>
+      <circle class="donut-progress" cx="45" cy="45" r="${r}" fill="none" stroke="${color}" stroke-width="10"
+        stroke-dasharray="0 ${c}" stroke-linecap="round"/>
+    </svg>
+    <div class="donut-center">0%</div>`;
+  const circle = container.querySelector('.donut-progress');
+  const center = container.querySelector('.donut-center');
+  const filled = c * (percent / 100);
+  requestAnimationFrame(() => {
+    circle.style.strokeDasharray = `${filled} ${c - filled}`;
+  });
+  animateCount(center, 0, percent, 700, v => v + '%');
+}
+
+function animateCount(el, from, to, duration, fmt) {
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    const val = Math.round(from + (to - from) * ease);
+    el.textContent = fmt ? fmt(val) : val;
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function renderBarChart(container, data, labels) {
+  const max = Math.max(...data, 1);
+  container.innerHTML = '';
+  data.forEach((val, i) => {
+    const col = document.createElement('div');
+    col.className = 'bar-col' + (i === data.length - 1 ? ' today' : '');
+    const h = Math.round((val / max) * 80) + 4;
+    col.innerHTML = `<div class="bar-fill" style="height:0"></div><div class="bar-label">${labels[i]}</div>`;
+    container.appendChild(col);
+    const bar = col.querySelector('.bar-fill');
+    setTimeout(() => { bar.style.height = h + 'px'; }, 80 + i * 70);
+  });
+}
+
+function openReport() {
+  const d = REPORT_DUMMY;
+  const p = getProfile();
+  const name = (p.setupComplete && p.displayName) ? p.displayName : '어르신';
+  document.getElementById('reportUserName').textContent = `${name} 어르신`;
+  document.getElementById('reportLastChat').textContent = `마지막 대화: ${d.lastChat}`;
+
+  const badge = document.getElementById('reportGradeBadge');
+  badge.className = 'report-grade-badge';
+  if (d.grade === 'NORMAL') { badge.classList.add('normal'); badge.textContent = '등급: 정상'; }
+  else if (d.grade === 'WARNING') { badge.classList.add('warning'); badge.textContent = '등급: 주의'; }
+  else { badge.classList.add('danger'); badge.textContent = '등급: 위험'; }
+
+  renderBarChart(document.getElementById('reportBarChart'), d.weeklyFatigue, d.weekLabels);
+  createDonut(document.getElementById('donutToday'), d.todayPositive, '#e87f5f');
+  createDonut(document.getElementById('donutMonth'), d.monthPositive, '#4caf50');
+  document.getElementById('donutTodayDesc').textContent = d.todayDesc;
+  document.getElementById('donutMonthDesc').textContent = d.monthDesc;
+
+  const maskedScoreEl = document.getElementById('maskedScore');
+  const maskedBarEl = document.getElementById('maskedBarFill');
+  maskedBarEl.style.width = '0';
+  maskedScoreEl.textContent = '0.0';
+  document.getElementById('maskedDesc').textContent = d.maskedDesc;
+  setTimeout(() => {
+    maskedBarEl.style.width = (d.maskedIndex * 10) + '%';
+    animateCount(maskedScoreEl, 0, d.maskedIndex * 10, 800, v => (v / 10).toFixed(1));
+  }, 300);
+
+  document.getElementById('actChat').textContent = d.chatCount;
+  document.getElementById('actPeak').textContent = d.peakTime;
+  document.getElementById('actSpeed').textContent = d.responseSpeed;
+
+  setReportTab('family');
+  reportOverlay.classList.add('open');
+  requestAnimationFrame(() => {
+    const scrollArea = reportOverlay.querySelector('.report-body-scroll');
+    if (scrollArea) scrollArea.scrollTop = 0;
+  });
+}
+
+function setReportTab(tabKey) {
+  document.querySelectorAll('.report-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tabKey);
+  });
+  const a = REPORT_DUMMY.advice[tabKey] || REPORT_DUMMY.advice.family;
+  document.getElementById('adviceQuote').textContent = a.quote;
+  document.getElementById('adviceBody').textContent = a.body;
+  document.getElementById('adviceActionBtn').textContent = a.btn;
+}
+
+reportTriggerBtn.addEventListener('click', openReport);
+reportCloseBtn.addEventListener('click', () => reportOverlay.classList.remove('open'));
+reportOverlay.addEventListener('click', (e) => {
+  if (e.target === reportOverlay) reportOverlay.classList.remove('open');
+});
+
+document.querySelectorAll('.report-tab').forEach(tab => {
+  tab.addEventListener('click', () => setReportTab(tab.dataset.tab));
 });
 
 // ── Load profile on start ────────────────
