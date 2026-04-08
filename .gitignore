@@ -1,4 +1,5 @@
 .cursor/
+.vscode/
 
 # Python virtualenv
 .venv/
@@ -9,6 +10,7 @@ __pycache__/
 *.pyo
 *.pyd
 # Env / secrets
+.env
 .env
 .env.*
 !.env.example
@@ -24,3 +26,7 @@ __pycache__/
 
 # Hugging Face / KoBART model cache (local)
 .hf_cache/
+
+tmp_repo/
+*.wav
+models/

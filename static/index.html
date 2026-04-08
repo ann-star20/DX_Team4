@@ -191,6 +191,12 @@ body {
 }
 .text-btn:hover { opacity: 0.85; }
 
+.status-text {
+  margin: 0 14px 8px;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
 /* ── Onboarding modal ───────────────────── */
 .onboarding-modal {
   display: none;
@@ -384,7 +390,6 @@ body {
   display: flex; align-items: center; justify-content: space-between;
 }
 .chat-header h2 { font-size: 16px; }
-.chat-header .toggle-btns { display: flex; gap: 8px; }
 .icon-btn {
   width: 36px; height: 36px;
   border-radius: 50%;
@@ -516,21 +521,10 @@ body {
 }
 .send-btn:disabled { opacity: 0.5; }
 
-.voice-btn {
-  width: 42px; height: 42px;
-  border-radius: 50%;
-  border: 2px solid var(--primary);
-  background: white;
-  color: var(--primary);
-  font-size: 20px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.2s;
-}
-.voice-btn.recording {
-  background: var(--red);
-  border-color: var(--red);
-  color: white;
+.input-bar.recording {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+  border-radius: 12px;
   animation: pulse 1s infinite;
 }
 @keyframes pulse { 50% { transform: scale(1.08); } }
@@ -611,9 +605,6 @@ body {
   <div class="right-panel">
     <div class="chat-header">
       <h2>대화</h2>
-      <div class="toggle-btns">
-        <button class="icon-btn active" id="ttsBtn" title="음성 ON/OFF">🔊</button>
-      </div>
     </div>
 
     <div class="chat-area" id="chatArea">
@@ -622,11 +613,11 @@ body {
       </div>
     </div>
 
-    <div class="input-bar">
-      <button class="voice-btn" id="voiceBtn" title="음성 입력">🎤</button>
+    <div class="input-bar" id="inputBar">
       <textarea id="msgInput" rows="1" placeholder="여기에 말씀해 주세요…"></textarea>
       <button class="send-btn" id="sendBtn" title="보내기">➤</button>
     </div>
+    <div class="status-text" id="statusText">화면 아무 곳이나 한 번 눌러 주시면 마이크가 켜지고, "이음아" 또는 "이음"으로 대화를 시작할 수 있어요.</div>
   </div>
 </div>
 
@@ -880,8 +871,7 @@ if (getProfile().setupComplete) {
 const chatArea = document.getElementById('chatArea');
 const msgInput = document.getElementById('msgInput');
 const sendBtn = document.getElementById('sendBtn');
-const voiceBtn = document.getElementById('voiceBtn');
-const ttsBtn = document.getElementById('ttsBtn');
+const inputBar = document.getElementById('inputBar');
 const userIdEl = document.getElementById('userId');
 userIdEl.addEventListener('change', () => {
   resetChatForCurrentUser();
@@ -890,12 +880,12 @@ userIdEl.addEventListener('change', () => {
 });
 const subtitle = document.getElementById('subtitle');
 const careMessage = document.getElementById('careMessage');
+const statusText = document.getElementById('statusText');
 const careLevelText = document.getElementById('careLevelText');
 const dotG = document.getElementById('dotG');
 const dotY = document.getElementById('dotY');
 const dotR = document.getElementById('dotR');
 
-let ttsEnabled = true;
 let currentAudio = null;
 
 // ── Photo upload ─────────────────────────
@@ -1114,6 +1104,14 @@ msgInput.addEventListener('keydown', (e) => {
 
 let lastSentAt = 0;
 let lastSentText = '';
+let pendingRequestId = null;
+
+/** 대화 모드 유지(마지막 발화 기준 5분, Asia/Seoul 로그는 seoulLog 사용) */
+const CONVERSATION_MS = 5 * 60 * 1000;
+let conversationDeadline = Number.MAX_SAFE_INTEGER;
+function touchConversationActivity() {
+  conversationDeadline = Date.now() + CONVERSATION_MS;
+}
 
 function shouldSkipAsNoise(text, source) {
   if (!text) return true;
@@ -1131,6 +1129,9 @@ async function sendMessage(source = 'manual') {
     }
     return;
   }
+  if (source === 'stt') {
+    touchConversationActivity();
+  }
   appendMsg('user', text);
   msgInput.value = '';
   msgInput.style.height = 'auto';
@@ -1139,15 +1140,22 @@ async function sendMessage(source = 'manual') {
   sendBtn.disabled = true;
   const typing = showTyping();
 
-  try {
-    const res = await fetch(`${API}/chat`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
+    const requestIdForThisMsg = pendingRequestId;
+    pendingRequestId = null;
+
+    try {
+      const payload = {
         user_id: userIdEl.value.trim() || 'user_001',
         message: text,
         ...profilePayloadForChat(),
-      }),
+      };
+      if (requestIdForThisMsg) {
+        payload.request_id = requestIdForThisMsg;
+      }
+    const res = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -1231,7 +1239,7 @@ function appendBotMsg(data) {
   scrollToBottom();
 
   showSubtitle(data.answer);
-  if (ttsEnabled) speak(data.answer);
+  speak(data.answer);
 }
 
 function showTyping() {
@@ -1255,19 +1263,35 @@ function showSubtitle(text) {
   subtitle._timer = setTimeout(() => subtitle.classList.remove('visible'), 8000);
 }
 
-// ── TTS (Google Cloud) ───────────────────
-ttsBtn.addEventListener('click', () => {
-  ttsEnabled = !ttsEnabled;
-  ttsBtn.classList.toggle('active', ttsEnabled);
-  if (!ttsEnabled && currentAudio) {
-    currentAudio.pause();
-    currentAudio = null;
-    if (avatarStage) avatarStage.classList.remove('talking');
+// ── TTS (Google Cloud) — 항상 ON; 재생 중 VAD 일시 정지 ───────────────
+let vadPausedForTts = false;
+
+function seoulNowStr() {
+  return new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+}
+function seoulLog(...args) {
+  console.log(`[${seoulNowStr()} Asia/Seoul]`, ...args);
+}
+
+function resumeListeningAfterTts() {
+  vadPausedForTts = false;
+  if (conversationActive) {
+    setStatusText('잠시 후 다시 듣습니다…');
+    seoulLog('TTS onend → 1초 후 Listening 재개 (Asia/Seoul)');
+    setTimeout(() => {
+      setStatusText('말씀해 주세요. 듣고 있어요.');
+      armMonitorListenerDelayed(0);
+    }, 1000);
+  } else {
+    seoulLog('TTS onend (대화 모드 아님)');
   }
-});
+}
 
 async function speak(text) {
   if (!text) return;
+  vadPausedForTts = true;
+  stopSpeechMonitor();
+  seoulLog('TTS 시작');
   try {
     if (currentAudio) {
       currentAudio.pause();
@@ -1275,8 +1299,9 @@ async function speak(text) {
     }
     if (avatarStage) avatarStage.classList.remove('talking');
     const res = await fetch(`${API}/tts`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({text}),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
     });
     if (!res.ok) throw new Error(`TTS ${res.status}`);
     const blob = await res.blob();
@@ -1287,65 +1312,502 @@ async function speak(text) {
       URL.revokeObjectURL(url);
       currentAudio = null;
       if (avatarStage) avatarStage.classList.remove('talking');
+      resumeListeningAfterTts();
     };
-    currentAudio.play();
-  } catch(err) {
+    try {
+      await currentAudio.play();
+    } catch (playErr) {
+      console.error('TTS play:', playErr);
+      resumeListeningAfterTts();
+    }
+  } catch (err) {
     console.error('TTS fail:', err);
     if ('speechSynthesis' in window) {
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'ko-KR'; u.rate = 0.9;
+      u.lang = 'ko-KR';
+      u.rate = 0.9;
       if (avatarStage) avatarStage.classList.add('talking');
-      u.onend = () => { if (avatarStage) avatarStage.classList.remove('talking'); };
+      u.onend = () => {
+        if (avatarStage) avatarStage.classList.remove('talking');
+        resumeListeningAfterTts();
+      };
       window.speechSynthesis.speak(u);
+    } else {
+      resumeListeningAfterTts();
     }
   }
 }
 
-// ── STT (Speech-to-Text) ────────────────
-let recognition = null, isRecording = false;
-let sttTranscript = '';
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  recognition = new SR();
-  recognition.lang = 'ko-KR';
-  recognition.interimResults = true;
-  recognition.continuous = false;
+// ── 보이스 파이프라인 (호출어 → 대화+VAD → 프리버퍼+WAV /stt) ─────────
+// /stt → transcript + request_id 즉시 반환 (감정 분석은 백엔드 백그라운드).
+const PRE_BUFFER_SEC = 2;
+const VAD_TICK_MS = 45;
+const VAD_START_LEVEL = 22;
+const VAD_SILENCE_LEVEL = 12;
+const VAD_VOICE_MIN_MS = 120;
+const VAD_SILENCE_MS = 1550;
+const MIN_UTTER_SEC = 0.28;
 
-  recognition.onresult = (e) => {
-    const t = Array.from(e.results).map(r => r[0].transcript).join('');
-    const finals = Array.from(e.results).filter(r => r.isFinal).map(r => r[0].transcript).join('');
-    sttTranscript = (finals || t).trim();
-    msgInput.value = sttTranscript;
+let mediaStream = null;
+let audioCtx = null;
+let mediaStreamSource = null;
+let analyser = null;
+let scriptNode = null;
+let freqData = null;
+let sampleRate = 48000;
+let ringCap = 0;
+let ring = null;
+let ringWrite = 0;
+let ringSamplesCommitted = 0;
+let vadIntervalId = null;
+let voicePipelineReady = false;
+let voiceBootstrapping = false;
+
+let keywordRecognition = null;
+let monitorRecognition = null;
+let keywordArmed = false;
+
+let conversationActive = false;
+let isCapturingUtterance = false;
+let utteranceSending = false;
+let captureChunks = [];
+let preBufferAtStart = null;
+let voiceAboveSince = null;
+let silenceSince = null;
+let vadSuppressUntil = 0;
+
+function setStatusText(text) {
+  if (statusText) statusText.textContent = text;
+}
+
+function writeAscii(view, offset, str) {
+  for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+}
+
+/** Float32 모노 PCM → LINEAR16 WAV (sampleRate는 AudioContext와 동일) */
+function encodeWavMono16(samples, sr) {
+  const n = samples.length;
+  const dataSize = n * 2;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+  writeAscii(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(view, 8, 'WAVE');
+  writeAscii(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sr >>> 0, true);
+  view.setUint32(28, sr * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+  let off = 44;
+  for (let i = 0; i < n; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    const q = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
+    view.setInt16(off, Math.max(-32768, Math.min(32767, q)), true);
+    off += 2;
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+function concatFloat32(parts) {
+  let total = 0;
+  for (const a of parts) total += (a && a.length) ? a.length : 0;
+  const out = new Float32Array(total);
+  let o = 0;
+  for (const a of parts) {
+    if (!a || !a.length) continue;
+    out.set(a, o);
+    o += a.length;
+  }
+  return out;
+}
+
+/** getByteFrequencyData 기반 음성 대역(약 250–3800 Hz) 평균 */
+function speechBandAvg(an, arr, sr) {
+  an.getByteFrequencyData(arr);
+  const nyquist = sr / 2;
+  const nBins = arr.length;
+  const hzPerBin = nyquist / nBins;
+  let sum = 0;
+  let cnt = 0;
+  for (let i = 0; i < nBins; i++) {
+    const hz = i * hzPerBin;
+    if (hz >= 250 && hz <= 3800) {
+      sum += arr[i];
+      cnt++;
+    }
+  }
+  return cnt ? sum / cnt : 0;
+}
+
+function getPreBufferSnapshot() {
+  const filled = Math.min(ringSamplesCommitted, ringCap);
+  if (!filled || !ring) return new Float32Array(0);
+  const out = new Float32Array(filled);
+  if (ringSamplesCommitted < ringCap) {
+    out.set(ring.subarray(0, ringWrite));
+  } else {
+    const first = ringCap - ringWrite;
+    out.set(ring.subarray(ringWrite), 0);
+    out.set(ring.subarray(0, ringWrite), first);
+  }
+  return out;
+}
+
+function onScriptProcess(e) {
+  const input = e.inputBuffer.getChannelData(0);
+  const n = input.length;
+  for (let i = 0; i < n; i++) {
+    ring[ringWrite] = input[i];
+    ringWrite = (ringWrite + 1) % ringCap;
+    ringSamplesCommitted++;
+  }
+  if (isCapturingUtterance) {
+    const copy = new Float32Array(n);
+    copy.set(input);
+    captureChunks.push(copy);
+  }
+}
+
+function playChimeSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.22, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.2);
+    setTimeout(() => ctx.close(), 350);
+  } catch (_) {}
+}
+
+function armKeywordListenerDelayed(ms = 300) {
+  if (!keywordArmed || conversationActive) return;
+  setTimeout(() => {
+    if (!keywordArmed || conversationActive || isCapturingUtterance || !keywordRecognition) return;
+    try {
+      keywordRecognition.start();
+      setStatusText("호출어 대기 중... '이음아' 또는 '이음'이라고 불러주세요.");
+    } catch (_) {}
+  }, ms);
+}
+
+function armMonitorListenerDelayed(ms = 300) {
+  if (!conversationActive || !monitorRecognition || vadPausedForTts) return;
+  setTimeout(() => {
+    if (!conversationActive || isCapturingUtterance || vadPausedForTts) return;
+    try {
+      monitorRecognition.start();
+    } catch (_) {}
+  }, ms);
+}
+
+function stopKeywordListener() {
+  if (!keywordRecognition) return;
+  try {
+    keywordRecognition.onend = null;
+    keywordRecognition.stop();
+  } catch (_) {}
+  keywordRecognition.onend = () => {};
+}
+
+function stopSpeechMonitor() {
+  if (!monitorRecognition) return;
+  try {
+    monitorRecognition.onend = null;
+    monitorRecognition.stop();
+  } catch (_) {}
+  monitorRecognition.onend = () => {};
+}
+
+function startSpeechEndMonitor() {
+  if (!monitorRecognition) return;
+  try {
+    monitorRecognition.start();
+  } catch (_) {}
+}
+
+function enterConversationMode() {
+  conversationActive = true;
+  touchConversationActivity();
+  stopKeywordListener();
+  armMonitorListenerDelayed(120);
+  seoulLog('대화 모드 진입 (5분 타이머 갱신)');
+}
+
+function exitConversationMode() {
+  conversationActive = false;
+  conversationDeadline = Number.MAX_SAFE_INTEGER;
+  stopSpeechMonitor();
+  if (isCapturingUtterance) {
+    isCapturingUtterance = false;
+    captureChunks = [];
+    preBufferAtStart = null;
+    if (inputBar) inputBar.classList.remove('recording');
+  }
+  setStatusText("대기 모드입니다. '이음아' 또는 '이음'이라고 불러주세요.");
+  armKeywordListenerDelayed(200);
+  seoulLog('대기 모드(호출어 필요)');
+}
+
+function setupKeywordListener() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    setStatusText('이 브라우저는 호출어 감지를 지원하지 않습니다. Chrome을 사용해 주세요.');
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  keywordRecognition = new SR();
+  keywordRecognition.lang = 'ko-KR';
+  keywordRecognition.continuous = true;
+  keywordRecognition.interimResults = true;
+  keywordRecognition.maxAlternatives = 1;
+
+  keywordRecognition.onresult = (e) => {
+    const transcript = Array.from(e.results).map((r) => r[0].transcript).join('').replace(/\s+/g, '');
+    const hit = transcript.includes('이음아') || transcript.includes('이음');
+    if (!hit) return;
+    if (isCapturingUtterance || utteranceSending) return;
+    stopKeywordListener();
+    playChimeSound();
+    msgInput.value = '';
+    vadSuppressUntil = Date.now() + 450;
+    enterConversationMode();
+    setStatusText('네, 말씀해 보세요! (자동으로 듣고 있어요)');
+    seoulLog('호출어 감지: ' + transcript);
+  };
+
+  keywordRecognition.onerror = () => {
+    if (keywordArmed && !conversationActive && !isCapturingUtterance) armKeywordListenerDelayed(700);
+  };
+  keywordRecognition.onend = () => {
+    if (keywordArmed && !conversationActive && !isCapturingUtterance) armKeywordListenerDelayed(250);
+  };
+
+  monitorRecognition = new SR();
+  monitorRecognition.lang = 'ko-KR';
+  monitorRecognition.continuous = true;
+  monitorRecognition.interimResults = true;
+  monitorRecognition.maxAlternatives = 1;
+  monitorRecognition.onspeechend = () => {
+    if (isCapturingUtterance) void stopUtteranceCaptureAndSend();
+  };
+  monitorRecognition.onresult = () => {};
+  monitorRecognition.onerror = () => {};
+  monitorRecognition.onend = () => {};
+}
+
+function startUtteranceCapture() {
+  if (!conversationActive || utteranceSending || vadPausedForTts || isCapturingUtterance) return;
+  preBufferAtStart = getPreBufferSnapshot();
+  captureChunks = [];
+  isCapturingUtterance = true;
+  voiceAboveSince = null;
+  silenceSince = null;
+  if (inputBar) inputBar.classList.add('recording');
+  setStatusText('듣고 있어요. 말씀을 마치면 자동으로 보내요.');
+  startSpeechEndMonitor();
+  seoulLog('녹음 시작 (프리버퍼 샘플 ' + (preBufferAtStart ? preBufferAtStart.length : 0) + ', sr=' + sampleRate + ')');
+}
+
+async function stopUtteranceCaptureAndSend() {
+  if (!isCapturingUtterance) return;
+  isCapturingUtterance = false;
+  if (inputBar) inputBar.classList.remove('recording');
+  stopSpeechMonitor();
+
+  const pre = preBufferAtStart && preBufferAtStart.length ? preBufferAtStart : new Float32Array(0);
+  preBufferAtStart = null;
+  const chunks = captureChunks;
+  captureChunks = [];
+
+  const merged = concatFloat32([pre, ...chunks]);
+  if (merged.length < sampleRate * MIN_UTTER_SEC) {
+    seoulLog('발화 짧음 — 전송 생략 (샘플 ' + merged.length + ')');
+    if (conversationActive) {
+      setStatusText('말씀해 주세요. 듣고 있어요.');
+      armMonitorListenerDelayed(200);
+    }
+    return;
+  }
+
+  utteranceSending = true;
+  try {
+    const srInt = Math.round(sampleRate);
+    const wav = encodeWavMono16(merged, srInt);
+    seoulLog('/stt 전송 WAV bytes≈' + wav.size + ', sr=' + srInt);
+    const stt = await sendAudioToStt(wav, sampleRate);
+    const text = (stt && stt.text ? stt.text : '').trim();
+    if (stt && stt.request_id) pendingRequestId = stt.request_id;
+    if (!text) {
+      seoulLog('STT 빈 텍스트');
+      return;
+    }
+    msgInput.value = text;
     msgInput.style.height = 'auto';
     msgInput.style.height = Math.min(msgInput.scrollHeight, 100) + 'px';
-  };
-  recognition.onend = () => {
-    isRecording = false;
-    voiceBtn.classList.remove('recording');
-    if (sttTranscript) {
-      msgInput.value = sttTranscript;
-      sendMessage('stt');
+    await sendMessage('stt');
+  } catch (e) {
+    console.error('Server STT failed:', e);
+    appendMsg('bot', '음성 인식에 실패했어요. 잠시 후 다시 시도해 주세요.');
+  } finally {
+    utteranceSending = false;
+    if (conversationActive) {
+      setStatusText('말씀해 주세요. 듣고 있어요.');
+      armMonitorListenerDelayed(320);
     }
-    sttTranscript = '';
-  };
-  recognition.onerror = (e) => {
-    isRecording = false;
-    voiceBtn.classList.remove('recording');
-    if (e.error !== 'no-speech') console.error('STT:', e.error);
-  };
+  }
 }
 
-voiceBtn.addEventListener('click', () => {
-  if (!recognition) { alert('Chrome 브라우저를 사용해 주세요.'); return; }
-  if (isRecording) { recognition.stop(); }
-  else {
-    msgInput.value = '';
-    sttTranscript = '';
-    isRecording = true;
-    voiceBtn.classList.add('recording');
-    recognition.start();
+function tickVad() {
+  if (!voicePipelineReady || !analyser || !freqData) return;
+
+  if (conversationActive && Date.now() > conversationDeadline) {
+    seoulLog('5분 무응답 → 대기 모드');
+    if (isCapturingUtterance) {
+      isCapturingUtterance = false;
+      captureChunks = [];
+      preBufferAtStart = null;
+      if (inputBar) inputBar.classList.remove('recording');
+      stopSpeechMonitor();
+    }
+    exitConversationMode();
+    return;
   }
-});
+
+  if (!conversationActive) return;
+  if (vadPausedForTts || utteranceSending) return;
+
+  const now = Date.now();
+  if (now < vadSuppressUntil) return;
+
+  const level = speechBandAvg(analyser, freqData, sampleRate);
+
+  if (!isCapturingUtterance) {
+    if (level >= VAD_START_LEVEL) {
+      if (voiceAboveSince == null) voiceAboveSince = now;
+      else if (now - voiceAboveSince >= VAD_VOICE_MIN_MS) {
+        startUtteranceCapture();
+        voiceAboveSince = null;
+      }
+    } else {
+      voiceAboveSince = null;
+    }
+  } else {
+    if (level >= VAD_SILENCE_LEVEL) {
+      silenceSince = null;
+    } else {
+      if (silenceSince == null) silenceSince = now;
+      else if (now - silenceSince >= VAD_SILENCE_MS) {
+        void stopUtteranceCaptureAndSend();
+      }
+    }
+  }
+}
+
+async function sendAudioToStt(audioBlob, sr) {
+  const form = new FormData();
+  const ct = audioBlob.type || '';
+  const fname = ct.includes('wav') ? 'recording.wav' : 'recording.webm';
+  form.append('audio', audioBlob, fname);
+  form.append('user_id', currentUserId());
+  form.append('language_code', 'ko-KR');
+  form.append('sample_rate_hertz', String(Math.round(sr)));
+
+  const res = await fetch(`${API}/stt`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error(`STT HTTP ${res.status}`);
+  return res.json();
+}
+
+function stopMicTracks() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach((t) => t.stop());
+    mediaStream = null;
+  }
+}
+
+async function bootstrapVoicePipeline() {
+  if (voicePipelineReady || voiceBootstrapping) return;
+  voiceBootstrapping = true;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatusText('이 기기에서는 마이크를 쓸 수 없어요.');
+      return;
+    }
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) throw new Error('AudioContext 없음');
+    audioCtx = new AC();
+    await audioCtx.resume();
+    sampleRate = audioCtx.sampleRate;
+    ringCap = Math.max(4096, Math.ceil(sampleRate * PRE_BUFFER_SEC));
+    ring = new Float32Array(ringCap);
+    ringWrite = 0;
+    ringSamplesCommitted = 0;
+
+    mediaStreamSource = audioCtx.createMediaStreamSource(mediaStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.82;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+
+    const zero = audioCtx.createGain();
+    zero.gain.value = 0;
+    mediaStreamSource.connect(analyser);
+    analyser.connect(zero);
+    zero.connect(audioCtx.destination);
+
+    const bufSize = 4096;
+    scriptNode = audioCtx.createScriptProcessor(bufSize, 1, 1);
+    scriptNode.onaudioprocess = onScriptProcess;
+    mediaStreamSource.connect(scriptNode);
+    scriptNode.connect(zero);
+
+    if (!keywordRecognition) setupKeywordListener();
+    keywordArmed = true;
+    conversationActive = false;
+    armKeywordListenerDelayed(0);
+
+    vadIntervalId = setInterval(tickVad, VAD_TICK_MS);
+
+    voicePipelineReady = true;
+    seoulLog('보이스 파이프라인 가동 sampleRate=' + sampleRate + ' Hz');
+    setStatusText("호출어 대기 중... '이음아' 또는 '이음'이라고 불러주세요.");
+  } catch (err) {
+    console.error(err);
+    seoulLog('파이프라인 실패', err && err.message);
+    setStatusText('마이크 권한이 필요해요. 화면을 다시 한 번 눌러 주세요.');
+    stopMicTracks();
+    if (audioCtx) {
+      try {
+        await audioCtx.close();
+      } catch (_) {}
+      audioCtx = null;
+    }
+  } finally {
+    voiceBootstrapping = false;
+  }
+}
+
+window.addEventListener('pointerdown', () => {
+  void bootstrapVoicePipeline();
+}, { capture: true });
 
 // ── Load profile on start ────────────────
 async function loadProfile() {

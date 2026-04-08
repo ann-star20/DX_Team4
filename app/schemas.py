@@ -14,6 +14,10 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     user_id: str
     message: str
+    request_id: Optional[str] = Field(
+        None,
+        description="/stt가 반환한 request_id. 텍스트 직접 입력 시 null. 섀도우 파이프라인이 이 ID로 음성 감정 캐시를 조회한다.",
+    )
     category: Optional[str] = Field(
         None,
         description="검색 필터용 카테고리 (Family, Health, Routine, Preference, Event, Emotion)",

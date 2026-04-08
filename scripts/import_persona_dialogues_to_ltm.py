@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 import sys
 from datetime import date
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -52,7 +55,11 @@ def main() -> None:
             line = line.strip()
             if not line:
                 continue
-            obj = json.loads(line)
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                logger.exception(f"JSON 파싱 실패: {line[:200]!r}")
+                raise
             user_id = obj["profile"]["persona-id"]
             talk_id = obj["talk"]["id"]["talk-id"]
             body = content_from_talk(obj["talk"]["content"])
@@ -66,11 +73,21 @@ def main() -> None:
                     "talk_id": talk_id,
                 },
             }
-            sb.table("long_term_memory").insert(row).execute()
+            try:
+                sb.table("long_term_memory").insert(row).execute()
+            except Exception:
+                logger.exception(
+                    f"long_term_memory insert 실패: user_id={user_id} talk_id={talk_id}"
+                )
+                raise
             n += 1
-            print(n, user_id, talk_id)
-    print("done", n, "rows")
+            logger.debug(f"{n} {user_id} {talk_id}")
+    logger.info(f"적재 완료: {n} rows")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
     main()

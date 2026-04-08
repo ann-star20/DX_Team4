@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STT/TTS Flow Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f7f7fb; color: #222; }
+    .card { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    h1 { margin-top: 0; font-size: 22px; }
+    h2 { margin: 0 0 10px; font-size: 18px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    input[type="text"], textarea { width: 100%; max-width: 680px; padding: 8px; border: 1px solid #bbb; border-radius: 6px; }
+    button { padding: 8px 12px; border: 0; border-radius: 8px; cursor: pointer; background: #3b5bdb; color: #fff; }
+    button.secondary { background: #555; }
+    button.warn { background: #d9480f; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    pre { white-space: pre-wrap; background: #111; color: #ddd; padding: 10px; border-radius: 8px; min-height: 140px; }
+    .mono { font-family: Consolas, monospace; }
+    .hint { color: #555; font-size: 13px; }
+    .ok { color: #2b8a3e; font-weight: 700; }
+    .warnText { color: #d9480f; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Server Chatbot Flow Test</h1>
+  <p class="hint">목표: voiceBtn과 동일한 서버 플로우를 마이크/파일로 테스트</p>
+
+  <div class="card">
+    <h2>기본 설정</h2>
+    <div class="row">
+      <label for="apiBase">API Base</label>
+      <input id="apiBase" type="text" value="http://127.0.0.1:7001" />
+    </div>
+    <div class="row">
+      <label for="userId">User ID</label>
+      <input id="userId" type="text" value="user_001" />
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>1) 마이크 녹음 → record.webm 저장</h2>
+    <div class="row">
+      <button id="btnStartRec">녹음 시작</button>
+      <button id="btnStopRec" class="warn" disabled>녹음 종료</button>
+      <span id="recState" class="mono">idle</span>
+    </div>
+    <div class="row">
+      <button id="btnDownloadRec" class="secondary" disabled>record.webm 다운로드</button>
+      <span class="hint">녹음 종료 후 활성화됩니다.</span>
+    </div>
+    <audio id="audioPreview" controls style="width:100%; max-width:680px;"></audio>
+  </div>
+
+  <div class="card">
+    <h2>2) UploadFile(webm/wav)로 /stt 테스트</h2>
+    <div class="row">
+      <input id="audioFile" type="file" accept=".webm,.wav,.ogg,.m4a,.mp3,audio/*" />
+      <button id="btnStt">/stt 호출</button>
+    </div>
+    <div class="row">
+      <span>Transcript:</span>
+      <span id="sttText" class="mono"></span>
+    </div>
+    <div class="row">
+      <span>Request ID:</span>
+      <span id="requestId" class="mono"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3) /chat 테스트 (request_id 포함)</h2>
+    <div class="row">
+      <textarea id="chatMessage" rows="3" placeholder="/stt transcript가 자동 입력됩니다. 수동 수정 가능"></textarea>
+    </div>
+    <div class="row">
+      <button id="btnChat">/chat 호출</button>
+      <button id="btnFullFlow">선택 파일로 /stt → /chat 연속 실행</button>
+    </div>
+    <div class="row">
+      <span>Care Level:</span>
+      <span id="careLevel" class="mono"></span>
+      <span>Distress:</span>
+      <span id="distressScore" class="mono"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>4) /tts 테스트</h2>
+    <div class="row">
+      <input id="ttsText" type="text" value="안녕하세요. 테스트 음성을 생성합니다." />
+      <button id="btnTts">/tts 호출</button>
+    </div>
+    <div class="row">
+      <a id="ttsDownload" class="mono" href="#" download="tts_test.mp3" style="display:none;">tts_test.mp3 다운로드</a>
+      <audio id="ttsPreview" controls style="width:100%; max-width:680px;"></audio>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>로그</h2>
+    <pre id="log"></pre>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    const sttTextEl = $("sttText");
+    const requestIdEl = $("requestId");
+    const chatMessageEl = $("chatMessage");
+    const careLevelEl = $("careLevel");
+    const distressScoreEl = $("distressScore");
+
+    let mediaRecorder = null;
+    let mediaStream = null;
+    let recChunks = [];
+    let recordedBlob = null;
+    let pendingRequestId = null;
+
+    function api() {
+      return $("apiBase").value.trim().replace(/\/$/, "");
+    }
+    function userId() {
+      return $("userId").value.trim() || "user_001";
+    }
+    function log(msg) {
+      const ts = new Date().toLocaleTimeString();
+      logEl.textContent += `[${ts}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function sendAudioToStt(blob) {
+      const form = new FormData();
+      form.append("audio", blob, "record.webm");
+      form.append("user_id", userId());
+      form.append("language_code", "ko-KR");
+      form.append("sample_rate_hertz", "48000");
+      const res = await fetch(`${api()}/stt`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`/stt HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function sendChat(message, requestId) {
+      const payload = { user_id: userId(), message: message || "" };
+      if (requestId) payload.request_id = requestId;
+      const res = await fetch(`${api()}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`/chat HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function sendTts(text) {
+      const res = await fetch(`${api()}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error(`/tts HTTP ${res.status}`);
+      return res.blob();
+    }
+
+    function stopTracks() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+    }
+
+    $("btnStartRec").addEventListener("click", async () => {
+      try {
+        if (!navigator.mediaDevices || !window.MediaRecorder) {
+          alert("이 브라우저는 녹음을 지원하지 않습니다.");
+          return;
+        }
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recChunks = [];
+        mediaRecorder = new MediaRecorder(mediaStream, { mimeType: "audio/webm" });
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) recChunks.push(e.data);
+        };
+        mediaRecorder.onstop = () => {
+          recordedBlob = new Blob(recChunks, { type: "audio/webm" });
+          $("audioPreview").src = URL.createObjectURL(recordedBlob);
+          $("btnDownloadRec").disabled = !recordedBlob || !recordedBlob.size;
+          $("recState").textContent = `recorded (${recordedBlob.size} bytes)`;
+          stopTracks();
+          log(`녹음 완료: ${recordedBlob.size} bytes`);
+        };
+        mediaRecorder.start();
+        $("recState").textContent = "recording...";
+        $("btnStartRec").disabled = true;
+        $("btnStopRec").disabled = false;
+        log("녹음 시작");
+      } catch (e) {
+        stopTracks();
+        log(`녹음 실패: ${e.message}`);
+      }
+    });
+
+    $("btnStopRec").addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      $("btnStartRec").disabled = false;
+      $("btnStopRec").disabled = true;
+    });
+
+    $("btnDownloadRec").addEventListener("click", () => {
+      if (!recordedBlob) return;
+      const url = URL.createObjectURL(recordedBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "record.webm";
+      a.click();
+      URL.revokeObjectURL(url);
+      log("record.webm 다운로드 완료");
+    });
+
+    $("btnStt").addEventListener("click", async () => {
+      try {
+        let blob = null;
+        const f = $("audioFile").files[0];
+        if (f) blob = f;
+        else if (recordedBlob) blob = recordedBlob;
+        if (!blob) {
+          alert("업로드 파일 또는 녹음 데이터가 필요합니다.");
+          return;
+        }
+        log(`/stt 호출 시작 (${blob.size} bytes)`);
+        const stt = await sendAudioToStt(blob);
+        const text = (stt.text || "").trim();
+        pendingRequestId = stt.request_id || null;
+        sttTextEl.textContent = text || "(empty)";
+        requestIdEl.textContent = pendingRequestId || "(none)";
+        if (text) chatMessageEl.value = text;
+        log(`/stt 성공: request_id=${pendingRequestId}, text="${text}"`);
+      } catch (e) {
+        log(`/stt 실패: ${e.message}`);
+      }
+    });
+
+    $("btnChat").addEventListener("click", async () => {
+      try {
+        const msg = chatMessageEl.value.trim();
+        if (!msg) {
+          alert("메시지가 비어 있습니다.");
+          return;
+        }
+        log(`/chat 호출 시작 (request_id=${pendingRequestId || "null"})`);
+        const data = await sendChat(msg, pendingRequestId);
+        // careLevelEl, distressScoreEl은 실시간 아닌, 초기 로드 시에만 보여주도록 수정
+        // careLevelEl.textContent = data.care_level ?? "";
+        // distressScoreEl.textContent = String(data.distress_score ?? "");
+        log(`/chat 성공: answer="${(data.answer || "").slice(0, 80)}..."`);
+      } catch (e) {
+        log(`/chat 실패: ${e.message}`);
+      }
+    });
+
+    $("btnFullFlow").addEventListener("click", async () => {
+      try {
+        const f = $("audioFile").files[0];
+        if (!f && !recordedBlob) {
+          alert("업로드 파일 또는 녹음 데이터가 필요합니다.");
+          return;
+        }
+        const blob = f || recordedBlob;
+        log("E2E 시작: /stt -> /chat");
+        const stt = await sendAudioToStt(blob);
+        const text = (stt.text || "").trim();
+        pendingRequestId = stt.request_id || null;
+        sttTextEl.textContent = text || "(empty)";
+        requestIdEl.textContent = pendingRequestId || "(none)";
+        chatMessageEl.value = text || chatMessageEl.value || "안녕하세요";
+        const data = await sendChat(chatMessageEl.value.trim(), pendingRequestId);
+        careLevelEl.textContent = data.care_level ?? "";
+        distressScoreEl.textContent = String(data.distress_score ?? "");
+        log(`E2E 성공: rid=${pendingRequestId}, care=${data.care_level}, distress=${data.distress_score}`);
+      } catch (e) {
+        log(`E2E 실패: ${e.message}`);
+      }
+    });
+
+    $("btnTts").addEventListener("click", async () => {
+      try {
+        const text = $("ttsText").value.trim();
+        if (!text) return;
+        log("/tts 호출 시작");
+        const blob = await sendTts(text);
+        const url = URL.createObjectURL(blob);
+        const a = $("ttsDownload");
+        a.href = url;
+        a.style.display = "inline";
+        $("ttsPreview").src = url;
+        log(`/tts 성공: ${blob.size} bytes`);
+      } catch (e) {
+        log(`/tts 실패: ${e.message}`);
+      }
+    });
+  </script>
+</body>
+</html>

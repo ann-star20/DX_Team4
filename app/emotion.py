@@ -11,6 +11,8 @@
 import logging
 from datetime import date, datetime, timedelta, timezone
 
+from dateutil.parser import isoparse
+
 from app.database import (
     get_senior_profile,
     upsert_senior_profile,
@@ -41,9 +43,9 @@ EMOTION_SCORES: dict[str, int] = {
     "슬픔": 4, "sadness": 4, "우울": 4,
     "분노": 3, "anger": 3, "angry": 3, "화남": 3,
     "혐오": 2, "disgust": 2,
-    "놀람": 0, "surprise": 0,
-    "중립": -1, "neutral": -1,
-    "기쁨": -5, "happiness": -5, "행복": -5, "즐거움": -5,
+    "놀람": -1, "surprise": -1,
+    "중립": 0, "neutral": 0,
+    "기쁨": -6, "happiness": -6, "행복": -6, "즐거움": -6,
 }
 
 DANGER_EMOTIONS = {"공포", "슬픔", "우울", "불안", "fear", "sadness"}
@@ -125,7 +127,7 @@ def update_user_emotion(user_id: str, emotion: str) -> dict:
 
     last_msg_str = profile.get("last_message_at")
     last_msg = (
-        datetime.fromisoformat(last_msg_str)
+        isoparse(last_msg_str)
         if last_msg_str
         else now - SESSION_GAP - timedelta(seconds=1)
     )

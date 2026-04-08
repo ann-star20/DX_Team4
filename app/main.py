@@ -1,12 +1,25 @@
 """
-FastAPI 엔트리포인트: /chat, /extract-memory 엔드포인트 + 정적 파일 서빙.
+FastAPI 엔트리포인트 — 비동기 섀도우 파이프라인 (shadow.md).
+
+[아키텍처]
+  /stt  → Google STT만 await → transcript + request_id 즉시 반환
+         → BackgroundTask: HuBERT 음성 감정 분석 → 캐시 저장
+  /chat → empathetic_chat(LLM) 최우선 → 즉시 반환
+         → BackgroundTask: 메시지 저장 + shadow_settlement_process
+           (텍스트 감정 + 캐시 폴링 + Soft Voting + 프로필 갱신, emotion_session 없음)
 """
 
 import asyncio
+import importlib
+import importlib.util
 import logging
 import re
-from datetime import datetime, timezone, timedelta
+import sys
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -19,7 +32,12 @@ from pydantic import BaseModel
 
 from app.database import (
     save_chat_message,
+    save_chat_message_with_emotion,
     get_senior_profile,
+    peek_senior_profile_cache,
+    ensure_senior_profile,
+    sync_all_cached_profiles_from_db,
+    update_chat_emotion_fields,
     get_weekly_reports,
     list_daily_sentiment_stats,
     list_recent_memories,
@@ -27,12 +45,20 @@ from app.database import (
     update_intervention_response,
     get_recent_interventions,
 )
-from app.emotion import update_user_emotion, update_action_fatigue
+from app.emotion import update_action_fatigue, update_user_emotion
 from app.kobart_memory_agent import extract_memories_kobart
 from app.memory_agent import extract_memories
 from app.rag import empathetic_chat
 from app.stt import transcribe_bytes
 from app.reminiscence import build_morning_brief
+from app.scheduler import start_scheduler, stop_scheduler
+from app.session_manager import (
+    run_sentiment_pipeline,
+    generate_request_id,
+    store_audio_sentiment,
+    pop_audio_sentiment,
+    cleanup_stale_cache,
+)
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -42,15 +68,47 @@ from app.schemas import (
     ExtractMemoryResponse,
 )
 
+# ── [전역 타임존 룰] 모든 시간은 KST 기준 ──
+KST = ZoneInfo("Asia/Seoul")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+
+async def _profile_cache_periodic_sync_loop() -> None:
+    """캐시된 프로필을 주기적으로 DB와 동기화 (이벤트 루프 블로킹 방지: to_thread)."""
+    while True:
+        try:
+            await asyncio.sleep(120)
+            await asyncio.to_thread(sync_all_cached_profiles_from_db)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            logger.exception("주기적 프로필 캐시 동기화 실패")
+
+
+@asynccontextmanager
+async def _app_lifespan(_: FastAPI):
+    start_scheduler()
+    _cache_task = asyncio.create_task(_profile_cache_periodic_sync_loop())
+    try:
+        yield
+    finally:
+        _cache_task.cancel()
+        try:
+            await _cache_task
+        except asyncio.CancelledError:
+            pass
+        stop_scheduler()
+
+
 app = FastAPI(
     title="마음 - 시니어 감정 맞춤형 RAG 챗봇",
     version="0.1.0",
     description="60대 이상 독거 어르신을 위한 음성 기반 감정 맞춤형 말벗 챗봇 백엔드",
+    lifespan=_app_lifespan,
 )
 
 app.add_middleware(
@@ -63,13 +121,17 @@ app.add_middleware(
 
 # ── POST /chat ───────────────────────────────────────────────────────
 
-_extract_lock = asyncio.Lock()
+_extract_semaphore = asyncio.Semaphore(1)
+_EXTRACT_STAGGER_SEC = 8.0
 
-async def _background_extract(user_id: str) -> None:
-    """응답 반환 후 백그라운드로 장기기억 추출."""
-    if _extract_lock.locked():
-        return
-    async with _extract_lock:
+
+async def _background_extract_low_priority(user_id: str) -> None:
+    """
+    장기기억 추출: /chat 응답·TTS와 경쟁하지 않도록 지연 + 세마포 1로 리소스 점유 최소화.
+    """
+    await asyncio.sleep(_EXTRACT_STAGGER_SEC)
+    async with _extract_semaphore:
+        await asyncio.sleep(0.2)
         try:
             extracted = await extract_memories(user_id=user_id, limit=50)
             if extracted:
@@ -78,14 +140,184 @@ async def _background_extract(user_id: str) -> None:
             logger.exception("백그라운드 기억 추출 실패")
 
 
+_sentiment_mod = None
+
+def _sentiment_fns():
+    """
+    감정 분석 모듈(sentiment_inference.py)의 함수들을 lazy import한다.
+    lru_cache 대신 모듈-전역 변수로 캐시 — 예외 시에는 다음 호출에서 재시도.
+    """
+    global _sentiment_mod
+    if _sentiment_mod is not None:
+        return _sentiment_mod
+
+    mod_path = Path(__file__).resolve().parent / "sentiment_inference.py"
+    src_path = Path(__file__).resolve().parent.parent / "src"
+    if src_path.is_dir() and str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+    if not mod_path.is_file():
+        raise FileNotFoundError(f"sentiment inference module not found: {mod_path}")
+    spec = importlib.util.spec_from_file_location("app_sentiment_inference", str(mod_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"failed to load module spec from: {mod_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    fns = (
+        mod.analyze_audio_sentiment,
+        mod.analyze_text_sentiment,
+        mod.apply_soft_voting,
+        mod.apply_soft_voting_text_only,
+    )
+    _sentiment_mod = fns
+    return fns
+
+
+# ── 백그라운드: HuBERT 음성 감정 분석 → 캐시 저장 ────────────────────
+
+async def _background_audio_analysis(request_id: str, audio_bytes: bytes) -> None:
+    """HuBERT 추론은 asyncio.to_thread로 격리하여 이벤트 루프 차단 방지."""
+    try:
+        analyze_audio, _, _, _ = _sentiment_fns()
+        result = await asyncio.to_thread(analyze_audio, audio_bytes)
+        store_audio_sentiment(request_id, result)
+    except Exception:
+        logger.exception("Request ID [%s] - 백그라운드 음성 감정 분석 실패", request_id)
+
+
+# ── 백그라운드: 섀도우 정산 파이프라인 ────────────────────────────────
+
+async def shadow_settlement_process(
+    user_id: str,
+    text: str,
+    request_id: str | None,
+    user_chat_id: str | None,
+) -> None:
+    """
+    BackgroundTask (async): LLM 응답 후 비동기 감정 정산.
+
+    a) 캐시에서 음성 감정 결과 폴링 (0.5s × 4회 = 최대 2초)
+    b) 텍스트 감정 분석 + Soft Voting
+    c) 프로필 감정/정서 갱신 (emotion_session 미사용)
+    d) 사용자 발화 레코드에 감정 메타 후행 업데이트
+    e) 캐시 TTL 정리
+    """
+    try:
+        t0 = time.monotonic()
+        now_kst = datetime.now(KST)
+
+        # ── (a) 캐시 폴링: 음성 감정 결과 ──
+        audio_result = None
+        if request_id:
+            for attempt in range(4):
+                audio_result = pop_audio_sentiment(request_id)
+                if audio_result is not None:
+                    logger.info(
+                        "Request ID [%s] - 캐시 히트 (attempt %d, top=%s)",
+                        request_id, attempt + 1, audio_result.get("top_emotion"),
+                    )
+                    break
+                await asyncio.sleep(0.5)
+            if audio_result is None:
+                logger.info(
+                    "Request ID [%s] - 음성 분석 결과 없음, 텍스트 전용 폴백", request_id,
+                )
+
+        # ── (b) 텍스트 감정 분석 + Soft Voting (CPU-bound → thread) ──
+        sentiment = None
+        try:
+            _, analyze_text, _, apply_sv_text_only = _sentiment_fns()
+            sentiment = await asyncio.to_thread(
+                run_sentiment_pipeline, text, audio_result, analyze_text, apply_sv_text_only,
+            )
+        except Exception:
+            logger.exception("Request ID [%s] - 감정 분석 파이프라인 실패", request_id)
+
+        # ── (c) 프로필 감정·케어 지표 (emotion_session 없음) ──
+        if sentiment:
+            try:
+                update_user_emotion(user_id, sentiment["final_emotion"])
+            except Exception:
+                logger.exception("Request ID [%s] - 프로필 감정 갱신 실패", request_id)
+
+        # ── (d) 사용자 발화 레코드에 감정 메타 후행 업데이트 ──
+        if sentiment and user_chat_id:
+            try:
+                update_chat_emotion_fields(
+                    chat_id=user_chat_id,
+                    emotion_label=sentiment["final_emotion"],
+                    emotion_score=sentiment["emotion_score"],
+                    incongruence_score=sentiment["incongruence_score"],
+                    text_emotion=sentiment.get("text_emotion"),
+                    voice_emotion=sentiment.get("voice_emotion"),
+                    soft_voting_log=sentiment.get("soft_voting_log"),
+                )
+            except Exception:
+                logger.exception("Request ID [%s] - 발화 감정 메타 업데이트 실패", request_id)
+
+        # ── (e) 캐시 TTL 정리 ──
+        cleanup_stale_cache()
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        logger.info(
+            "Shadow 정산 완료: user=%s, request_id=%s, emotion=%s, has_audio=%s, elapsed=%dms",
+            user_id, request_id,
+            sentiment["final_emotion"] if sentiment else "N/A",
+            audio_result is not None,
+            elapsed_ms,
+        )
+    except Exception:
+        logger.exception(
+            "Shadow 정산 실패 (메인 응답은 정상 전달됨): user=%s, request_id=%s",
+            user_id, request_id,
+        )
+
+
+async def _persist_chat_and_shadow(req: ChatRequest, assistant_answer: str) -> None:
+    """
+    응답 반환 후: 사용자/어시스턴트 메시지 저장 → 섀도우 정산.
+    DB 오류는 로그만 남기며, 이미 응답·TTS는 완료된 상태다.
+    """
+    try:
+        ensure_senior_profile(req.user_id)
+    except Exception:
+        logger.exception("프로필 보장 실패 (백그라운드): user=%s", req.user_id)
+
+    user_chat_id: str | None = None
+    try:
+        user_msg = save_chat_message(req.user_id, role="user", content=req.message)
+        user_chat_id = str(user_msg.get("chat_id", ""))
+    except Exception:
+        logger.exception("사용자 메시지 저장 실패 (백그라운드): user=%s", req.user_id)
+
+    try:
+        save_chat_message(req.user_id, role="assistant", content=assistant_answer)
+    except Exception:
+        logger.exception("어시스턴트 메시지 저장 실패 (백그라운드): user=%s", req.user_id)
+
+    await shadow_settlement_process(
+        req.user_id, req.message, req.request_id, user_chat_id,
+    )
+
+    # 장기기억 추출: /chat 응답 후 비동기·저우선 (별도 태스크로 블로킹 없음)
+    asyncio.create_task(_background_extract_low_priority(req.user_id))
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest, bg: BackgroundTasks):
-    """어르신 발화 → RAG 기반 공감형 답변 반환."""
-    try:
-        save_chat_message(req.user_id, role="user", content=req.message)
-    except Exception:
-        logger.exception("사용자 메시지 저장 실패")
-        raise HTTPException(status_code=502, detail="대화 저장에 실패했어요. 잠시 후 다시 시도해 주세요.")
+    """
+    [섀도우 파이프라인] empathetic_chat(LLM)만 크리티컬 경로.
+
+    1. LLM 답변 생성
+    2. care_level 등은 peek_senior_profile_cache(메모리)만 사용 — DB 대기 없음
+    3. BackgroundTask: 저장 + 섀도우 정산 + (저우선) 장기기억 추출
+
+    [선택] TTS 스트리밍: Google Cloud TTS는 일반적으로 전체 합성 후 MP3 반환.
+    실시간 부분 TTS를 원하면 (a) 문장 단위로 LLM 스트리밍 + 문장별 /tts 호출,
+    또는 (b) Web Speech API로 클라이언트 즉시 재생, 또는 (c) SSE로 청크 텍스트를
+    먼저 보내고 TTS를 큐잉하는 구조를 별도 검토.
+    """
+    t0 = time.monotonic()
 
     try:
         result = await empathetic_chat(
@@ -102,21 +334,24 @@ async def chat_endpoint(req: ChatRequest, bg: BackgroundTasks):
         logger.exception("RAG 챗봇 응답 생성 실패")
         raise HTTPException(status_code=502, detail="답변 생성에 실패했어요. 잠시 후 다시 시도해 주세요.")
 
-    try:
-        save_chat_message(req.user_id, role="assistant", content=result["answer"])
-    except Exception:
-        logger.exception("어시스턴트 메시지 저장 실패")
+    # 메모리 캐시만 — DB 라운드트립 없음 (미스 시 기본값)
+    cached = peek_senior_profile_cache(req.user_id)
+    if cached:
+        result.setdefault("care_level", cached.get("care_level", "NORMAL"))
+        result.setdefault("distress_score", cached.get("distress_score", 0))
+        result.setdefault("distress_score_daily", cached.get("distress_score_daily", 50))
+    else:
+        result.setdefault("care_level", "NORMAL")
+        result.setdefault("distress_score", 0)
+        result.setdefault("distress_score_daily", 50)
 
-    detected_emotion = result.get("detected_emotion", "중립")
-    try:
-        status = update_user_emotion(req.user_id, detected_emotion)
-        result["care_level"] = status["care_level"]
-        result["distress_score"] = status["distress_score"]
-        result["distress_score_daily"] = status["distress_score_daily"]
-    except Exception:
-        logger.exception("감정 점수 업데이트 실패")
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    logger.info(
+        "/chat 즉시 응답: user=%s, request_id=%s, elapsed=%dms",
+        req.user_id, req.request_id, elapsed_ms,
+    )
 
-    bg.add_task(_background_extract, req.user_id)
+    bg.add_task(_persist_chat_and_shadow, req, result.get("answer", ""))
 
     return ChatResponse(**result)
 
@@ -250,18 +485,37 @@ async def tts_endpoint(req: TtsRequest):
         raise HTTPException(status_code=502, detail="음성 변환에 실패했어요.")
 
 
-# ── POST /stt ─────────────────────────────────────────────────────────
+# ── POST /stt (섀도우 파이프라인: STT만 await → 즉시 반환) ────────────
+
 
 @app.post("/stt")
 async def stt_endpoint(
+    bg: BackgroundTasks,
     audio: UploadFile = File(..., description="녹음 파일 (권장: WebM/Opus 또는 WAV PCM)"),
+    user_id: str = Form("default_user"),
     language_code: str = Form("ko-KR"),
     sample_rate_hertz: int = Form(48000),
 ):
-    """Google Cloud Speech-to-Text — 어르신 발화를 텍스트로 변환 (latest_long 모델)."""
+    """
+    [섀도우 파이프라인] Google STT → transcript + request_id 즉시 반환.
+    HuBERT 음성 감정 분석은 BackgroundTask로 분리.
+    """
+    t0 = time.monotonic()
     body = await audio.read()
+    logger.info("/stt 요청 수신: user=%s, bytes=%d, content_type=%s",
+                user_id, len(body), audio.content_type)
+
     if not body:
         raise HTTPException(status_code=400, detail="녹음 데이터가 비어 있습니다.")
+
+    # ── [1] 메모리 전용 request_id (emotion_session DB 없음) ──
+    try:
+        request_id = generate_request_id(user_id)
+    except Exception:
+        logger.exception("Request ID 생성 실패 — 폴백 ID 사용")
+        request_id = f"{user_id}:fallback:{int(time.time())}"
+
+    # ── [2] Google STT (await — 이것만 기다린다) ──
     try:
         text = await asyncio.to_thread(
             transcribe_bytes,
@@ -271,19 +525,28 @@ async def stt_endpoint(
             sample_rate_hertz=sample_rate_hertz,
         )
     except gcp_exceptions.GoogleAPIError as e:
-        logger.exception("Speech-to-Text API 오류")
         msg = getattr(e, "message", None) or str(e)
-        raise HTTPException(
-            status_code=502,
-            detail=f"음성 인식 서비스 오류입니다. GCP에서 Speech-to-Text API 사용 설정과 결제·권한을 확인해 주세요. ({msg})",
-        )
+        logger.error("Speech-to-Text API 오류: %s", msg)
+        raise HTTPException(status_code=502, detail=f"음성 인식 서비스 오류입니다. ({msg})")
     except Exception:
         logger.exception("음성 인식 실패")
-        raise HTTPException(
-            status_code=502,
-            detail="음성 인식에 실패했어요. 잠시 후 다시 시도해 주세요.",
-        )
-    return {"text": text, "language_code": language_code}
+        raise HTTPException(status_code=502, detail="음성 인식에 실패했어요. 잠시 후 다시 시도해 주세요.")
+
+    # ── [3] 즉시 응답 (감정 분석 기다리지 않음) ──
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    logger.info(
+        "/stt 즉시 응답: user=%s, request_id=%s, text_len=%d, elapsed=%dms",
+        user_id, request_id, len(text or ""), elapsed_ms,
+    )
+
+    # ── [4] 백그라운드: HuBERT 음성 감정 분석 → 캐시 저장 ──
+    bg.add_task(_background_audio_analysis, request_id, body)
+
+    return {
+        "text": text,
+        "request_id": request_id,
+        "language_code": language_code,
+    }
 
 
 # ── GET /profile/{user_id} ────────────────────────────────────────────
@@ -429,13 +692,13 @@ async def list_interventions(user_id: str, limit: int = 10):
 
 KMA_AUTH_KEY = "a_c5KbU5TUq3OSm1OU1Kjg"
 KMA_BASE_URL = "https://apihub.kma.go.kr/api/typ01/url/kma_sfctm2.php"
-KST = timezone(timedelta(hours=9))
+_KST_OFFSET = timezone(timedelta(hours=9))
 SEOUL_STN = 108
 
 @app.get("/weather")
 async def weather_endpoint():
     """서울 현재 날씨 (기상청 API) — 기온, 습도, 강수량."""
-    now_kst = datetime.now(KST)
+    now_kst = datetime.now(_KST_OFFSET)
     errors = []
 
     def _safe_float(v: str) -> float | None:
@@ -516,6 +779,11 @@ async def health():
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/test.html")
+async def test_page():
+    return FileResponse(STATIC_DIR / "test.html")
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
