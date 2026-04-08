@@ -56,7 +56,7 @@ body {
 .photo-frame {
   position: relative;
   width: 100%;
-  aspect-ratio: 4/3;
+  aspect-ratio: 3/2.5;
   background: #e8e0da;
   overflow: hidden;
   cursor: pointer;
@@ -91,6 +91,9 @@ body {
   background: #fff8e1;
   border-radius: var(--radius);
   font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  max-height: 210px;
 }
 .schedule-card .title-row {
   display: flex; justify-content: space-between; align-items: center;
@@ -106,7 +109,13 @@ body {
 }
 .schedule-card .title-row .add-btn:hover { border-color: var(--primary); color: var(--primary); }
 
-.schedule-list { display: flex; flex-direction: column; gap: 2px; }
+.schedule-list {
+  display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto; flex: 1; min-height: 0;
+}
+.schedule-list::-webkit-scrollbar { width: 5px; }
+.schedule-list::-webkit-scrollbar-thumb { background: #e0d6c8; border-radius: 4px; }
+.schedule-list::-webkit-scrollbar-track { background: transparent; }
 
 .schedule-item {
   padding: 6px 4px; display: flex; align-items: center; gap: 8px;
@@ -159,6 +168,13 @@ body {
 .schedule-form .btn-mic:hover { background: #ffe0d6; }
 .schedule-form .btn-mic.rec { background: var(--red); color: #fff; animation: pulse 1s infinite; }
 @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
+
+.schedule-item.past .sch-time {
+  color: #bbb; text-decoration: line-through;
+}
+.schedule-item.past .sch-text {
+  color: #bbb; text-decoration: line-through;
+}
 
 .schedule-empty {
   text-align: center; padding: 12px; color: #bbb; font-size: 13px;
@@ -534,6 +550,40 @@ body {
   animation: pulse 1s infinite;
 }
 @keyframes pulse { 50% { transform: scale(1.08); } }
+
+/* ── Schedule Alarm Modal ────────────── */
+.schedule-alarm-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.5);
+  align-items: center; justify-content: center;
+  animation: fadeInOverlay 0.4s ease;
+}
+.schedule-alarm-overlay.open { display: flex; }
+@keyframes fadeInOverlay { from { opacity: 0; } to { opacity: 1; } }
+
+.schedule-alarm-card {
+  background: var(--surface);
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  max-width: 380px; width: 90%;
+  padding: 32px 28px 24px;
+  text-align: center;
+  animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.schedule-alarm-icon { font-size: 48px; margin-bottom: 12px; }
+.schedule-alarm-title { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.schedule-alarm-time { font-size: 28px; font-weight: 800; color: var(--primary); margin-bottom: 8px; }
+.schedule-alarm-desc { font-size: 16px; color: var(--text); margin-bottom: 20px; line-height: 1.5; }
+.schedule-alarm-btn {
+  padding: 12px 32px; border: none; border-radius: 12px;
+  background: var(--primary); color: #fff;
+  font-size: 15px; font-weight: 600; font-family: inherit;
+  cursor: pointer; transition: opacity 0.2s;
+}
+.schedule-alarm-btn:hover { opacity: 0.9; }
 </style>
 </head>
 <body>
@@ -681,6 +731,16 @@ body {
       <button type="button" class="btn-secondary" id="obCancelBtn" style="display:none;">취소</button>
       <button type="button" class="btn-primary" id="obSubmitBtn">저장하고 시작</button>
     </div>
+  </div>
+</div>
+
+<div class="schedule-alarm-overlay" id="scheduleAlarmOverlay">
+  <div class="schedule-alarm-card">
+    <div class="schedule-alarm-icon">⏰</div>
+    <div class="schedule-alarm-title">일정 알림</div>
+    <div class="schedule-alarm-time" id="alarmTime"></div>
+    <div class="schedule-alarm-desc" id="alarmDesc"></div>
+    <button class="schedule-alarm-btn" id="alarmDismissBtn">확인</button>
   </div>
 </div>
 
@@ -947,10 +1007,13 @@ function renderSchedule() {
     scheduleList.innerHTML = '<div class="schedule-empty">등록된 일정이 없습니다</div>';
     return;
   }
+  const now = new Date();
+  const nowHHMM = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
   const sorted = [...scheduleData].sort((a,b) => a.time.localeCompare(b.time));
   sorted.forEach(item => {
+    const isPast = item.time < nowHHMM;
     const el = document.createElement('div');
-    el.className = 'schedule-item';
+    el.className = 'schedule-item' + (isPast ? ' past' : '');
     el.innerHTML = `
       <span class="sch-time">${item.time}</span>
       <span class="sch-text">${item.desc}</span>
@@ -1063,6 +1126,60 @@ schMicBtn.addEventListener('click', () => {
 });
 
 renderSchedule();
+
+// ── Schedule Alarm ───────────────────────
+const alarmOverlay = document.getElementById('scheduleAlarmOverlay');
+const alarmTime = document.getElementById('alarmTime');
+const alarmDesc = document.getElementById('alarmDesc');
+const alarmDismissBtn = document.getElementById('alarmDismissBtn');
+const alarmFiredSet = new Set(JSON.parse(sessionStorage.getItem('alarmFired') || '[]'));
+
+function playAlarmSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.18);
+      osc.stop(ctx.currentTime + i * 0.18 + 0.35);
+    });
+  } catch(e) { /* Web Audio not available */ }
+}
+
+function showScheduleAlarm(item) {
+  alarmTime.textContent = item.time;
+  alarmDesc.textContent = item.desc;
+  alarmOverlay.classList.add('open');
+  playAlarmSound();
+}
+
+alarmDismissBtn.addEventListener('click', () => {
+  alarmOverlay.classList.remove('open');
+});
+
+function checkScheduleAlarms() {
+  const now = new Date();
+  const nowHHMM = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  scheduleData.forEach(item => {
+    const key = item.id + '_' + item.time;
+    if (item.time === nowHHMM && !alarmFiredSet.has(key)) {
+      alarmFiredSet.add(key);
+      sessionStorage.setItem('alarmFired', JSON.stringify([...alarmFiredSet]));
+      showScheduleAlarm(item);
+    }
+  });
+  renderSchedule();
+}
+
+checkScheduleAlarms();
+setInterval(checkScheduleAlarms, 15000);
 
 // ── Weather ──────────────────────────────
 async function loadWeather() {
