@@ -287,6 +287,69 @@ async def get_reports(user_id: str, days: int = 7):
     return {"user_id": user_id, "reports": reports}
 
 
+# ── GET /report-summary/{user_id} ────────────────────────────────────
+
+@app.get("/report-summary/{user_id}")
+async def get_report_summary(user_id: str):
+    """리포트 UI에 필요한 가공 데이터 반환."""
+    KST = timezone(timedelta(hours=9))
+    today = datetime.now(KST).date()
+    day_names = ['월', '화', '수', '목', '금', '토', '일']
+
+    reports = get_weekly_reports(user_id, limit=7)
+
+    date_map: dict[str, dict] = {}
+    for r in reports:
+        date_map[r["report_date"]] = r
+
+    weekly_scores = []
+    weekly_labels = []
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        ds = d.isoformat()
+        r = date_map.get(ds)
+        score = round(float(r["mood_avg_score"]), 1) if r and r.get("mood_avg_score") is not None else None
+        weekly_scores.append(score)
+        label = '오늘' if i == 0 else day_names[d.weekday()]
+        weekly_labels.append(label)
+
+    today_str = today.isoformat()
+    today_report = date_map.get(today_str)
+    today_score = round(float(today_report["mood_avg_score"]), 1) if today_report and today_report.get("mood_avg_score") is not None else None
+
+    past_scores = [s for s in weekly_scores[:-1] if s is not None]
+    avg_7d = round(sum(past_scores) / len(past_scores), 1) if past_scores else None
+
+    diff = None
+    diff_label = ""
+    if today_score is not None and avg_7d is not None:
+        diff = round(today_score - avg_7d, 1)
+        if diff > 0:
+            diff_label = f"평소보다 {abs(diff)}점 높습니다."
+        elif diff < 0:
+            diff_label = f"평소보다 {abs(diff)}점 낮습니다."
+        else:
+            diff_label = "평소와 비슷합니다."
+
+    care_level = "NORMAL"
+    if today_report and today_report.get("today_care_level"):
+        care_level = today_report["today_care_level"]
+
+    total_utterance = today_report.get("total_utterance", 0) if today_report else 0
+
+    return {
+        "user_id": user_id,
+        "care_level": care_level,
+        "weekly_scores": weekly_scores,
+        "weekly_labels": weekly_labels,
+        "today_score": today_score,
+        "avg_7d": avg_7d,
+        "diff": diff,
+        "diff_label": diff_label,
+        "total_utterance": total_utterance,
+    }
+
+
 # ── POST /intervention ───────────────────────────────────────────────
 
 class InterventionRequest(BaseModel):
