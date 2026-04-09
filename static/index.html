@@ -142,9 +142,9 @@ body {
 }
 .schedule-item:hover { background: rgba(0,0,0,0.04); }
 .schedule-item .sch-time {
-  min-width: 56px; font-weight: 600; font-size: 16px; color: var(--primary);
+  min-width: 56px; font-weight: 600; font-size: 18px; color: var(--primary);
 }
-.schedule-item .sch-text { flex: 1; font-size: 16px; }
+.schedule-item .sch-text { flex: 1; font-size: 18px; }
 .schedule-item .sch-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
 .schedule-item:hover .sch-actions { opacity: 1; }
 .sch-actions button {
@@ -196,7 +196,7 @@ body {
 }
 
 .schedule-empty {
-  text-align: center; padding: 12px; color: #bbb; font-size: 16px;
+  text-align: center; padding: 12px; color: #bbb; font-size: 18px;
 }
 
 /* ── Settings (gear) button ─────────────── */
@@ -466,29 +466,6 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
   position: relative;
   width: min(840px, 100%);
   max-width: 100%;
-}
-
-.avatar-mouth {
-  position: absolute;
-  left: 50%;
-  top: 62%;
-  width: 38%;
-  height: auto;
-  transform: translate(-50%, -50%) scaleY(0.9);
-  opacity: 0;
-  z-index: 3;
-  pointer-events: none;
-  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.10));
-}
-
-.avatar-stage.talking .avatar-mouth {
-  opacity: 1;
-  animation: mouthTalk 0.18s ease-in-out infinite alternate;
-}
-
-@keyframes mouthTalk {
-  from { transform: translate(-50%, -50%) scaleY(0.9); }
-  to { transform: translate(-50%, -50%) scaleY(1.15); }
 }
 
 .avatar-img {
@@ -1025,7 +1002,6 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
     <div class="avatar-area">
       <div class="avatar-stage" id="avatarStage">
         <img src="/static/avatar.png" class="avatar-img" id="avatarImg" alt="말벗 캐릭터">
-        <img src="/static/mouths/mouth_boy.png" class="avatar-mouth" id="avatarMouthImg" alt="" aria-hidden="true">
       </div>
       <div class="care-message" id="careMessage">
         안녕하세요, 어르신! 오늘도 좋은 하루 보내세요.
@@ -1219,14 +1195,6 @@ const AVATAR_PATHS = {
   robot: '/static/avatars/robot.svg',
 };
 
-const AVATAR_MOUTH_PATHS = {
-  boy: '/static/mouths/mouth_boy.png',
-  girl: '/static/mouths/mouth_girl.png',
-  dog: '/static/mouths/mouth_dog.png',
-  cat: '/static/mouths/mouth_cat.png',
-  robot: '/static/mouths/mouth_robot.png',
-};
-
 function currentUserId() {
   const el = document.getElementById('userId');
   const v = el && el.value.trim();
@@ -1274,9 +1242,7 @@ const obSubmitBtn = document.getElementById('obSubmitBtn');
 const obCancelBtn = document.getElementById('obCancelBtn');
 const editProfileBtn = document.getElementById('editProfileBtn');
 const profileSummary = document.getElementById('profileSummary');
-const avatarStage = document.getElementById('avatarStage');
 const avatarImg = document.getElementById('avatarImg');
-const avatarMouthImg = document.getElementById('avatarMouthImg');
 
 document.querySelectorAll('.avatar-choice').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -1322,14 +1288,6 @@ function applyProfileToUI() {
     avatarImg.src = AVATAR_PATHS[p.avatarId];
   } else {
     avatarImg.src = AVATAR_PATHS.boy;
-  }
-
-  if (avatarMouthImg) {
-    if (p.avatarId && AVATAR_MOUTH_PATHS[p.avatarId]) {
-      avatarMouthImg.src = AVATAR_MOUTH_PATHS[p.avatarId];
-    } else {
-      avatarMouthImg.src = AVATAR_MOUTH_PATHS.boy;
-    }
   }
 
   const cm = document.getElementById('careMessage');
@@ -1972,7 +1930,6 @@ ttsBtn.addEventListener('click', () => {
   if (!ttsEnabled && currentAudio) {
     currentAudio.pause();
     currentAudio = null;
-    if (avatarStage) avatarStage.classList.remove('talking');
   }
 });
 
@@ -1983,7 +1940,6 @@ async function speak(text) {
       currentAudio.pause();
       currentAudio = null;
     }
-    if (avatarStage) avatarStage.classList.remove('talking');
     const res = await fetch(`${API}/tts`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({text}),
@@ -1992,11 +1948,9 @@ async function speak(text) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     currentAudio = new Audio(url);
-    if (avatarStage) avatarStage.classList.add('talking');
     currentAudio.onended = () => {
       URL.revokeObjectURL(url);
       currentAudio = null;
-      if (avatarStage) avatarStage.classList.remove('talking');
     };
     currentAudio.play();
   } catch(err) {
@@ -2004,8 +1958,6 @@ async function speak(text) {
     if ('speechSynthesis' in window) {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'ko-KR'; u.rate = 0.9;
-      if (avatarStage) avatarStage.classList.add('talking');
-      u.onend = () => { if (avatarStage) avatarStage.classList.remove('talking'); };
       window.speechSynthesis.speak(u);
     }
   }
