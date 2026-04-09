@@ -1523,6 +1523,78 @@ function deleteSchedule(id) {
   renderSchedule();
 }
 
+function _toHHMM(hour, minute) {
+  const h = Math.max(0, Math.min(23, Number(hour) || 0));
+  const m = Math.max(0, Math.min(59, Number(minute) || 0));
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function parseScheduleAddIntent(text) {
+  if (!text) return null;
+  const raw = text.trim();
+  const compact = raw.replace(/\s+/g, ' ');
+  const isAddIntent = /(일정|루틴).*(추가|등록|넣어|만들어)|((추가|등록|넣어|만들어).*(일정|루틴))/.test(compact);
+  if (!isAddIntent) return null;
+
+  let hour = null;
+  let minute = 0;
+  let meridiem = null; // am | pm | null
+
+  const hm = compact.match(/(\d{1,2})\s*[:시]\s*(\d{1,2})/);
+  if (hm) {
+    hour = Number(hm[1]);
+    minute = Number(hm[2]);
+  } else {
+    const hOnly = compact.match(/(\d{1,2})\s*시(?:\s*반)?/);
+    if (hOnly) {
+      hour = Number(hOnly[1]);
+      minute = /시\s*반/.test(compact) ? 30 : 0;
+    } else {
+      const hhmm = compact.match(/\b(\d{1,2})\s*:\s*(\d{2})\b/);
+      if (hhmm) {
+        hour = Number(hhmm[1]);
+        minute = Number(hhmm[2]);
+      }
+    }
+  }
+
+  if (/(오전|아침|am)/i.test(compact)) meridiem = 'am';
+  if (/(오후|저녁|밤|pm)/i.test(compact)) meridiem = 'pm';
+
+  if (hour === null || Number.isNaN(hour) || hour < 0 || hour > 24) return null;
+  if (minute < 0 || minute > 59) return null;
+
+  if (meridiem === 'pm' && hour < 12) hour += 12;
+  if (meridiem === 'am' && hour === 12) hour = 0;
+  if (!meridiem && hour === 24) hour = 0;
+  if (hour > 23) return null;
+
+  let desc = compact
+    .replace(/(일정|루틴)/g, '')
+    .replace(/(추가|등록|넣어|만들어)(해줘|주세요|줘|해)?/g, '')
+    .replace(/(오전|오후|아침|저녁|밤|am|pm)/ig, '')
+    .replace(/\d{1,2}\s*:\s*\d{1,2}/g, '')
+    .replace(/\d{1,2}\s*시\s*\d{1,2}\s*분?/g, '')
+    .replace(/\d{1,2}\s*시(?:\s*반)?/g, '')
+    .replace(/\d{1,2}\s*분/g, '')
+    .replace(/[은는이가에로을를요.!?,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!desc) desc = '새 일정';
+  return { time: _toHHMM(hour, minute), desc };
+}
+
+function tryAddScheduleFromMessage(text) {
+  const parsed = parseScheduleAddIntent(text);
+  if (!parsed) return false;
+  scheduleData.push({ id: Date.now(), time: parsed.time, desc: parsed.desc });
+  saveScheduleData();
+  renderSchedule();
+  appendMsg('bot', `일정을 추가했어요. ${parsed.time} - ${parsed.desc}`);
+  return true;
+}
+
 // Schedule voice input (separate STT instance)
 let schRecognition = null, schRecording = false;
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -1804,6 +1876,12 @@ async function sendMessage(source = 'manual') {
   msgInput.style.height = 'auto';
   lastSentText = text;
   lastSentAt = Date.now();
+
+  if (tryAddScheduleFromMessage(text)) {
+    msgInput.focus();
+    return;
+  }
+
   sendBtn.disabled = true;
   const typing = showTyping();
 
