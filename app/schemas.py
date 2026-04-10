@@ -40,6 +40,14 @@ class ChatRequest(BaseModel):
         None,
         description="말벗 캐릭터: boy, girl, dog, cat, robot",
     )
+    request_id: Optional[str] = Field(
+        None,
+        description="/stt 응답의 request_id. 있으면 섀도우 파이프라인으로 감정·DB 정산",
+    )
+    include_tts: bool = Field(
+        False,
+        description="true면 서버에서 LLM 답변으로 TTS(MP3) 생성 후 audio_base64로 함께 반환",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -67,6 +75,11 @@ class ChatResponse(BaseModel):
     retrieved_memories: list[str] = Field(
         default_factory=list,
         description="RAG로 참조한 과거 기억 목록",
+    )
+    request_id: Optional[str] = Field(None, description="요청에 넘긴 request_id 에코")
+    audio_base64: Optional[str] = Field(
+        None,
+        description="include_tts=true일 때 MP3 바이너리의 Base64",
     )
 
 

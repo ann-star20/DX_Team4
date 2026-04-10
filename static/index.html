@@ -368,6 +368,7 @@ body {
   position: relative;
   background: radial-gradient(ellipse at center, var(--center-gradient-inner) 0%, var(--center-gradient-outer) 70%);
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   transition: background 0.6s ease;
 }
@@ -437,8 +438,16 @@ body[data-care-level] .report-trigger-btn {
 body[data-care-level] .msg.user .bubble { background: #4caf50; }
 
 .avatar-area {
-  display: flex; flex-direction: column;
-  align-items: center; gap: 16px;
+  position: relative;
+  z-index: 10;
+  flex: 0 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
 }
 
 .avatar-stage {
@@ -452,12 +461,7 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
   height: auto;
   max-height: min(70dvh, 840px);
   object-fit: contain;
-  animation: float 4s ease-in-out infinite;
   filter: drop-shadow(0 8px 24px rgba(232,127,95,0.18));
-}
-@keyframes float {
-  0%,100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
 }
 
 .care-message {
@@ -480,12 +484,136 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
   color: white;
   padding: 12px 20px;
   border-radius: 12px;
-  font-size: 16px;
+  font-size: clamp(1.1rem, 2.5vw, 1.35rem);
   text-align: center;
   display: none;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 .subtitle-area.visible { display: block; }
+
+/* ── Voice / STT / TTS: 플로우 밖 고정 상단 밴드 (글 변화로 아바타 위치·크기 불변) ───────── */
+.center-announce-stack {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 18;
+  width: auto;
+  height: min(32vh, 280px);
+  max-height: min(32vh, 280px);
+  min-height: 0;
+  padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.voice-state-overlay {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: min(100%, 560px);
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: rgba(255, 253, 250, 0.94);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--panel-border);
+}
+.voice-state-overlay.visible { display: flex; }
+.voice-state-title {
+  font-size: clamp(2rem, 4.2vw, 3rem);
+  font-weight: 800;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.4;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+.voice-state-overlay.processing .voice-state-title {
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  font-weight: 700;
+}
+.voice-stt-preview {
+  width: 100%;
+  max-width: min(100%, 560px);
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.97);
+  border: 2px solid var(--primary-light);
+  font-size: clamp(2rem, 3.8vw, 2.35rem);
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text);
+  text-align: center;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+  box-shadow: var(--shadow);
+}
+.voice-stt-preview[hidden] { display: none !important; }
+.tts-subtitle-bar {
+  width: 100%;
+  max-width: min(100%, 560px);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(26vh, 200px);
+  overflow: hidden;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: rgba(58, 51, 48, 0.88);
+  color: #fff;
+  font-size: clamp(2rem, 3.6vw, 2.3rem);
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+.tts-subtitle-bar[hidden] { display: none !important; }
+.voice-meter-wrap {
+  width: min(320px, 80%);
+  height: 14px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.08);
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.12);
+}
+.voice-meter-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--primary-light), var(--primary));
+  transition: width 0.06s linear;
+}
+.voice-silence-hint {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-light);
+  min-height: 22px;
+}
+.voice-silence-bar {
+  width: min(280px, 75%);
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+.voice-silence-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #90caf9, #42a5f5);
+  transition: width 0.08s linear;
+}
 
 /* ── Right Panel (Chat) ──────────────────── */
 .right-panel {
@@ -565,7 +693,8 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
 }
 
 .alert-badge {
-  display: inline-block;
+  display: none;
+  /* display: inline-block; */
   padding: 4px 10px;
   border-radius: 8px;
   font-size: 14px; font-weight: 700;
@@ -1426,6 +1555,17 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
   <div class="center-panel">
     <canvas class="particle-canvas" id="particleCanvas"></canvas>
 
+    <div class="center-announce-stack" id="centerAnnounceStack">
+      <div id="voiceStateOverlay" class="voice-state-overlay" aria-live="polite" aria-atomic="true">
+        <div class="voice-state-title" id="voiceStateTitle"></div>
+        <div class="voice-meter-wrap"><div class="voice-meter-fill" id="voiceMeterFill"></div></div>
+        <div class="voice-silence-hint" id="voiceSilenceHint"></div>
+        <div class="voice-silence-bar"><div class="voice-silence-fill" id="voiceSilenceFill"></div></div>
+      </div>
+      <div id="voiceSttPreview" class="voice-stt-preview" hidden></div>
+      <div id="ttsSubtitleBar" class="tts-subtitle-bar" hidden></div>
+    </div>
+
     <div class="avatar-area">
       <div class="avatar-stage" id="avatarStage">
         <img src="/static/avatar.png" class="avatar-img" id="avatarImg" alt="말벗 캐릭터">
@@ -1436,12 +1576,13 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
     </div>
 
     <div class="subtitle-area" id="subtitle"></div>
+
     <button class="settings-btn" id="settingsBtn" title="내 정보 설정">⚙</button>
     <button class="report-trigger-btn" id="reportTriggerBtn">📊 나의 정서 리포트</button>
   </div>
 
   <!-- ══ Right Panel (Chat) ══ -->
-  <div class="right-panel">
+  <div class="right-panel" >
     <div class="chat-header">
       <h2>대화</h2>
       <div class="toggle-btns">
@@ -2375,6 +2516,31 @@ msgInput.addEventListener('keydown', (e) => {
 
 let lastSentAt = 0;
 let lastSentText = '';
+/** /stt 직후 /chat에 넘길 request_id (서버 섀도우 파이프라인) */
+let lastSttRequestId = null;
+
+/** @type {'IDLE'|'LISTENING'|'PROCESSING'} */
+let voiceState = 'IDLE';
+const VOICE_SESSION_MS = 300000;
+const VOICE_SILENCE_MS = 3000;
+const VOICE_RMS_SILENCE = 0.018;
+const VOICE_RMS_SPEECH = 0.028;
+let voiceSessionUntil = 0;
+let voiceAudioCtx = null;
+let voiceMediaStream = null;
+let voiceWorkletNode = null;
+let voiceAudioReady = false;
+let voiceAudioInitPromise = null;
+let voiceWakeRec = null;
+let voiceRecordingActive = false;
+let voiceRecordChunks = [];
+let voiceRafId = 0;
+let voiceSilenceAccum = 0;
+let voiceRmsEma = 0;
+let voiceLastVadAt = 0;
+let wakeRecognitionReady = false;
+/** STT 요청~채팅 종료까지 호출어·VAD 중복 방지 */
+let voicePipelineBusy = false;
 
 function shouldSkipAsNoise(text, source) {
   if (!text) return true;
@@ -2383,13 +2549,14 @@ function shouldSkipAsNoise(text, source) {
   return false;
 }
 
-async function sendMessage(source = 'manual') {
+async function sendMessage(source = 'manual', opts = {}) {
   const text = msgInput.value.trim();
   if (shouldSkipAsNoise(text, source)) {
     if (source === 'stt') {
       msgInput.value = '';
       msgInput.style.height = 'auto';
     }
+    if (opts.voiceUi && typeof resumeVoiceAfterChat === 'function') resumeVoiceAfterChat();
     return;
   }
   appendMsg('user', text);
@@ -2400,26 +2567,39 @@ async function sendMessage(source = 'manual') {
 
   if (await tryAddScheduleFromMessage(text)) {
     msgInput.focus();
+    if (opts.voiceUi && typeof resumeVoiceAfterChat === 'function') resumeVoiceAfterChat();
     return;
   }
 
+  const requestId = opts.requestId != null ? opts.requestId : lastSttRequestId;
+  lastSttRequestId = null;
+
+  const payload = {
+    user_id: userIdEl.value.trim() || 'user_001',
+    message: text,
+    ...profilePayloadForChat(),
+  };
+  if (requestId) payload.request_id = requestId;
+  if (opts.includeTts) payload.include_tts = true;
+
   sendBtn.disabled = true;
+  if (opts.voiceUi) setVoiceState('PROCESSING');
   const typing = showTyping();
+  let chatData = null;
 
   try {
     const res = await fetch(`${API}/chat`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        user_id: userIdEl.value.trim() || 'user_001',
-        message: text,
-        ...profilePayloadForChat(),
-      }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    chatData = data;
     typing.remove();
-    appendBotMsg(data);
+    const deferVoiceResume =
+      !!opts.voiceUi && ttsEnabled && !!(data.answer && String(data.answer).trim());
+    appendBotMsg(data, { deferVoiceResume });
     if (data.care_level) updateCareLevel(data.care_level);
     updateCareMessage(data.care_level, data.detected_emotion);
   } catch (err) {
@@ -2429,6 +2609,11 @@ async function sendMessage(source = 'manual') {
   } finally {
     sendBtn.disabled = false;
     msgInput.focus();
+    if (opts.voiceUi && typeof resumeVoiceAfterChat === 'function') {
+      const defer =
+        ttsEnabled && chatData && !!(chatData.answer && String(chatData.answer).trim());
+      if (!defer) resumeVoiceAfterChat();
+    }
   }
 }
 
@@ -2489,7 +2674,8 @@ function appendMsg(role, text) {
   scrollToBottom();
 }
 
-function appendBotMsg(data) {
+function appendBotMsg(data, msgOpts = {}) {
+  const deferVoiceResume = !!msgOpts.deferVoiceResume;
   const wrap = document.createElement('div');
   wrap.className = 'msg bot';
   const bubble = document.createElement('div');
@@ -2525,8 +2711,71 @@ function appendBotMsg(data) {
   chatArea.appendChild(wrap);
   scrollToBottom();
 
-  showSubtitle(data.answer);
-  if (ttsEnabled) speak(data.answer);
+  const answerPlain = normalizeKoreanText(data.answer);
+  if (!deferVoiceResume) showSubtitle(answerPlain);
+
+  if (ttsEnabled) {
+    const onTtsEnd = deferVoiceResume
+      ? () => {
+          clearTtsSubtitleBar();
+          resumeVoiceAfterChat();
+        }
+      : null;
+    if (data.audio_base64) playMp3Base64(data.audio_base64, answerPlain, onTtsEnd);
+    else speak(answerPlain, onTtsEnd);
+  }
+}
+
+function playMp3Base64(b64, fallbackText, onEnded) {
+  if (!b64) return;
+  try {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+    }
+    if (onEnded) {
+      prepareTtsUpperOverlay();
+      setVoiceInputMuted(true);
+      clearTtsSubtitleBar();
+    }
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'audio/mpeg' });
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
+    if (onEnded && fallbackText) {
+      const reveal = () => showTtsSubtitleStreaming(fallbackText, currentAudio);
+      currentAudio.addEventListener('loadedmetadata', reveal, { once: true });
+      reveal();
+    }
+    currentAudio.onended = () => {
+      URL.revokeObjectURL(url);
+      currentAudio = null;
+      if (onEnded) {
+        onEnded();
+      }
+    };
+    if (onEnded) {
+      currentAudio.addEventListener(
+        'error',
+        () => {
+          URL.revokeObjectURL(url);
+          currentAudio = null;
+          onEnded();
+        },
+        { once: true },
+      );
+    }
+    void currentAudio.play().catch((e) => {
+      console.error('playMp3Base64 play', e);
+      if (onEnded) onEnded();
+    });
+  } catch (e) {
+    console.error('playMp3Base64', e);
+    if (fallbackText) speak(fallbackText, onEnded);
+    else if (onEnded) onEnded();
+  }
 }
 
 function showTyping() {
@@ -2560,12 +2809,17 @@ ttsBtn.addEventListener('click', () => {
   }
 });
 
-async function speak(text) {
+async function speak(text, onEnded) {
   if (!text) return;
   try {
     if (currentAudio) {
       currentAudio.pause();
       currentAudio = null;
+    }
+    if (onEnded) {
+      prepareTtsUpperOverlay();
+      setVoiceInputMuted(true);
+      clearTtsSubtitleBar();
     }
     const res = await fetch(`${API}/tts`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -2575,31 +2829,537 @@ async function speak(text) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     currentAudio = new Audio(url);
+    if (onEnded) {
+      const reveal = () => showTtsSubtitleStreaming(text, currentAudio);
+      currentAudio.addEventListener('loadedmetadata', reveal, { once: true });
+      reveal();
+    }
     currentAudio.onended = () => {
       URL.revokeObjectURL(url);
       currentAudio = null;
+      if (onEnded) onEnded();
     };
-    currentAudio.play();
+    if (onEnded) {
+      currentAudio.addEventListener(
+        'error',
+        () => {
+          URL.revokeObjectURL(url);
+          currentAudio = null;
+          onEnded();
+        },
+        { once: true },
+      );
+    }
+    void currentAudio.play().catch((e) => {
+      console.error('speak play', e);
+      if (onEnded) onEnded();
+    });
   } catch(err) {
     console.error('TTS fail:', err);
     if ('speechSynthesis' in window) {
+      if (onEnded) {
+        setVoiceInputMuted(true);
+        showTtsSubtitleStreaming(text, null);
+      }
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'ko-KR'; u.rate = 0.9;
+      u.onend = () => {
+        if (onEnded) onEnded();
+      };
+      u.onerror = () => {
+        if (onEnded) onEnded();
+      };
       window.speechSynthesis.speak(u);
+    } else if (onEnded) {
+      onEnded();
     }
   }
 }
 
-// ── STT (Speech-to-Text) ────────────────
-let recognition = null, isRecording = false;
+// ── Voice: 호출어(이음아/이음) · 2초 링버퍼 · 3초 침묵 · 5분 세션 · WAV STT ──
+const voiceStateOverlay = document.getElementById('voiceStateOverlay');
+const voiceStateTitle = document.getElementById('voiceStateTitle');
+const voiceMeterFill = document.getElementById('voiceMeterFill');
+const voiceSilenceHint = document.getElementById('voiceSilenceHint');
+const voiceSilenceFill = document.getElementById('voiceSilenceFill');
+
+function voiceSessionActive() {
+  return Date.now() < voiceSessionUntil;
+}
+
+function extendVoiceSession() {
+  voiceSessionUntil = Date.now() + VOICE_SESSION_MS;
+}
+
+function setVoiceState(state) {
+  voiceState = state;
+  if (!voiceStateOverlay) return;
+  if (state === 'IDLE') {
+    voiceStateOverlay.classList.remove('visible', 'processing');
+    if (voiceStateTitle) voiceStateTitle.textContent = '';
+    if (voiceSilenceHint) voiceSilenceHint.textContent = '';
+    if (voiceSilenceFill) voiceSilenceFill.style.width = '0%';
+    if (voiceMeterFill) voiceMeterFill.style.width = '0%';
+    return;
+  }
+  if (state === 'PROCESSING') {
+    voiceStateOverlay.classList.remove('visible', 'processing');
+    if (voiceStateTitle) voiceStateTitle.textContent = '';
+    if (voiceSilenceHint) voiceSilenceHint.textContent = '';
+    if (voiceSilenceFill) voiceSilenceFill.style.width = '0%';
+    if (voiceMeterFill) voiceMeterFill.style.width = '0%';
+    return;
+  }
+  voiceStateOverlay.classList.add('visible');
+  if (state === 'LISTENING') {
+    voiceStateOverlay.classList.remove('processing');
+    if (voiceStateTitle) voiceStateTitle.textContent = '🎤 듣고 있어요...';
+  }
+}
+
+function matchesWakeWord(text) {
+  const raw = (text || '').trim();
+  const compact = raw.replace(/\s+/g, '');
+  // Web Speech이 띄어쓰기·인식 오류로 "이 음 아" 등으로 줄 수 있음
+  if (compact.includes('이음아')) return true;
+  if (compact.includes('이음')) return true;
+  if (/이\s*음\s*아/.test(raw)) return true;
+  return false;
+}
+
+function concatFloat32Arrays(chunks) {
+  let n = 0;
+  for (const c of chunks) n += c.length;
+  const out = new Float32Array(n);
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.length;
+  }
+  return out;
+}
+
+function encodeWavFromFloat32(samples, sampleRate) {
+  const pcm = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buf);
+  const w = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  w(0, 'RIFF');
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  w(8, 'WAVE');
+  w(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  w(36, 'data');
+  view.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buf, 44, pcm.length).set(pcm);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+function pauseWakeRecognition() {
+  if (!voiceWakeRec) return;
+  try {
+    voiceWakeRec.onend = null;
+    voiceWakeRec.stop();
+  } catch (_) {}
+}
+
+function resumeWakeRecognition() {
+  if (!wakeRecognitionReady || voiceState !== 'IDLE') return;
+  try {
+    voiceWakeRec.start();
+  } catch (_) {
+    setTimeout(() => { try { voiceWakeRec.start(); } catch (e2) {} }, 400);
+  }
+}
+
+let recordingStopping = false;
+
+function listeningRafLoop(now) {
+  if (!voiceRecordingActive || voiceState !== 'LISTENING') return;
+  const last = listeningRafLoop._last != null ? listeningRafLoop._last : now;
+  const dt = Math.max(0, now - last);
+  listeningRafLoop._last = now;
+  if (voiceRmsEma < VOICE_RMS_SILENCE) {
+    voiceSilenceAccum += dt;
+    if (voiceSilenceFill) {
+      voiceSilenceFill.style.width = Math.min(100, (voiceSilenceAccum / VOICE_SILENCE_MS) * 100) + '%';
+    }
+    if (voiceSilenceHint) {
+      const left = Math.max(0, Math.ceil((VOICE_SILENCE_MS - voiceSilenceAccum) / 1000));
+      voiceSilenceHint.textContent = '말씀을 마치시면 자동 전송 (' + left + '초)';
+    }
+    if (voiceSilenceAccum >= VOICE_SILENCE_MS) {
+      void finishVoiceRecording();
+      return;
+    }
+  } else {
+    voiceSilenceAccum = 0;
+    if (voiceSilenceFill) voiceSilenceFill.style.width = '0%';
+    if (voiceSilenceHint) voiceSilenceHint.textContent = '듣고 있어요…';
+  }
+  voiceRafId = requestAnimationFrame(listeningRafLoop);
+}
+
+function onWorkletMessage(ev) {
+  const d = ev.data;
+  if (!d || !d.type) return;
+  if (d.type === 'rms') {
+    const r = d.r || 0;
+    voiceRmsEma = voiceRmsEma * 0.88 + r * 0.12;
+    if (voiceMeterFill) {
+      const p = Math.min(100, Math.round((voiceRmsEma / 0.15) * 100));
+      voiceMeterFill.style.width = p + '%';
+    }
+    if (!voicePipelineBusy && voiceState === 'IDLE' && voiceAudioReady && voiceSessionActive() && !voiceRecordingActive) {
+      if (voiceRmsEma > VOICE_RMS_SPEECH && Date.now() - voiceLastVadAt > 800) {
+        voiceLastVadAt = Date.now();
+        void beginListeningFromTrigger('vad');
+      }
+    }
+  }
+  if (d.type === 'preroll' && voiceRecordingActive && d.f32) {
+    voiceRecordChunks.push(d.f32);
+  }
+  if (d.type === 'chunk' && voiceRecordingActive && d.f32) {
+    voiceRecordChunks.push(d.f32);
+  }
+}
+
+async function ensureVoiceAudio() {
+  if (voiceAudioReady) return;
+  if (!voiceAudioInitPromise) {
+    voiceAudioInitPromise = (async () => {
+      if (!window.AudioWorklet) throw new Error('AudioWorklet 미지원');
+      voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      await voiceAudioCtx.resume();
+      voiceMediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+      });
+      const src = voiceAudioCtx.createMediaStreamSource(voiceMediaStream);
+      await voiceAudioCtx.audioWorklet.addModule('/static/worklets/voice-ring-processor.js');
+      voiceWorkletNode = new AudioWorkletNode(voiceAudioCtx, 'voice-ring-processor');
+      voiceWorkletNode.port.postMessage({ type: 'init', seconds: 2 });
+      voiceWorkletNode.port.onmessage = onWorkletMessage;
+      const sink = voiceAudioCtx.createGain();
+      sink.gain.value = 0;
+      src.connect(voiceWorkletNode);
+      voiceWorkletNode.connect(sink);
+      sink.connect(voiceAudioCtx.destination);
+      voiceAudioReady = true;
+      if (!voiceWakeRec) startWakeRecognition();
+    })();
+  }
+  return voiceAudioInitPromise;
+}
+
+async function beginListeningFromTrigger(_reason) {
+  if (voicePipelineBusy || voiceRecordingActive || voiceState !== 'IDLE') return;
+  try {
+    await ensureVoiceAudio();
+  } catch (e) {
+    console.error(e);
+    alert('마이크 또는 음성 파이프라인을 시작할 수 없습니다.');
+    return;
+  }
+  pauseWakeRecognition();
+  voiceRecordingActive = true;
+  voiceRecordChunks = [];
+  voiceSilenceAccum = 0;
+  listeningRafLoop._last = performance.now();
+  voiceWorkletNode.port.postMessage({ type: 'start-record' });
+  setVoiceState('LISTENING');
+  voiceBtn.classList.add('recording');
+  voiceRafId = requestAnimationFrame(listeningRafLoop);
+}
+
+async function finishVoiceRecording() {
+  if (!voiceRecordingActive || recordingStopping) return;
+  recordingStopping = true;
+  voiceRecordingActive = false;
+  cancelAnimationFrame(voiceRafId);
+  voiceRafId = 0;
+  listeningRafLoop._last = undefined;
+  voiceWorkletNode.port.postMessage({ type: 'stop-record' });
+  voiceBtn.classList.remove('recording');
+  if (voiceSilenceHint) voiceSilenceHint.textContent = '';
+  if (voiceSilenceFill) voiceSilenceFill.style.width = '0%';
+
+  const merged = concatFloat32Arrays(voiceRecordChunks);
+  voiceRecordChunks = [];
+  const sr = voiceAudioCtx ? voiceAudioCtx.sampleRate : 48000;
+  if (merged.length < sr * 0.12) {
+    setVoiceState('IDLE');
+    resumeWakeRecognition();
+    extendVoiceSession();
+    recordingStopping = false;
+    return;
+  }
+
+  voicePipelineBusy = true;
+  setVoiceState('IDLE');
+
+  const wavBlob = encodeWavFromFloat32(merged, sr);
+  const fd = new FormData();
+  fd.append('audio', wavBlob, 'utterance.wav');
+  fd.append('user_id', userIdEl.value.trim() || 'user_001');
+  fd.append('language_code', 'ko-KR');
+  fd.append('sample_rate_hertz', String(Math.round(sr)));
+
+  try {
+    const res = await fetch(`${API}/stt`, { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(`STT ${res.status}`);
+    const data = await res.json();
+    const t = (data.text || '').trim();
+    extendVoiceSession();
+    if (!t) {
+      voicePipelineBusy = false;
+      setVoiceState('IDLE');
+      resumeWakeRecognition();
+      recordingStopping = false;
+      return;
+    }
+    const sttEl = document.getElementById('voiceSttPreview');
+    if (sttEl) {
+      sttEl.hidden = false;
+      sttEl.textContent = t;
+    }
+    msgInput.value = t;
+    msgInput.style.height = 'auto';
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 100) + 'px';
+    await sendMessage('stt', { requestId: data.request_id, includeTts: true, voiceUi: true });
+  } catch (err) {
+    console.error(err);
+    appendMsg('bot', '앗, 음성 인식을 못했어요. 잠시 후 다시 시도해 주세요.');
+    voicePipelineBusy = false;
+    setVoiceState('IDLE');
+    resumeWakeRecognition();
+  }
+  recordingStopping = false;
+}
+
+function resumeVoiceAfterChat() {
+  voicePipelineBusy = false;
+  setVoiceInputMuted(false);
+  extendVoiceSession();
+  const sttEl = document.getElementById('voiceSttPreview');
+  if (sttEl) {
+    sttEl.hidden = true;
+    sttEl.textContent = '';
+  }
+  setVoiceState('IDLE');
+  voiceBtn.classList.remove('recording');
+  resumeWakeRecognition();
+}
+
+function setVoiceInputMuted(muted) {
+  if (voiceMediaStream) {
+    voiceMediaStream.getAudioTracks().forEach((tr) => {
+      tr.enabled = !muted;
+    });
+  }
+  if (muted) pauseWakeRecognition();
+}
+
+/** TTS 직전: 사용자 STT 미리보기·처리 중 오버레이 제거 (아바타 위 밴드만 사용) */
+function prepareTtsUpperOverlay() {
+  const stt = document.getElementById('voiceSttPreview');
+  if (stt) {
+    stt.hidden = true;
+    stt.textContent = '';
+  }
+  setVoiceState('IDLE');
+}
+
+function splitSentencesForTts(text) {
+  if (!text || typeof text !== 'string') return [];
+  const normalized = text.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+  const parts = normalized.split(/(?<=[.!?。…])\s+|(?<=\n)/);
+  const out = [];
+  for (const p of parts) {
+    const t = p.trim();
+    if (t) out.push(t);
+  }
+  return out.length ? out : [normalized];
+}
+
+function trimTtsOverflowFromStart(bar) {
+  if (!bar) return;
+  let t = bar.textContent;
+  if (!t) return;
+  let guard = 0;
+  while (bar.scrollHeight > bar.clientHeight && t.length > 1 && guard < 400) {
+    guard += 1;
+    const segs = splitSentencesForTts(t);
+    if (segs.length > 1) {
+      t = segs.slice(1).join(' ').trim();
+    } else {
+      const cut = Math.max(1, Math.floor(t.length * 0.3));
+      const sp = t.indexOf(' ', cut);
+      t = sp >= 0 ? t.slice(sp + 1).trim() : t.slice(cut);
+    }
+    bar.textContent = t;
+  }
+}
+
+function clearTtsSubtitleBar() {
+  const bar = document.getElementById('ttsSubtitleBar');
+  if (!bar) return;
+  clearInterval(bar._revealTimer);
+  bar._revealTimer = null;
+  bar.hidden = true;
+  bar.textContent = '';
+}
+
+function showTtsSubtitleStreaming(fullText, audioEl) {
+  const bar = document.getElementById('ttsSubtitleBar');
+  if (!bar || !fullText) return;
+  clearInterval(bar._revealTimer);
+  bar._revealTimer = null;
+  bar.hidden = false;
+  bar.textContent = '';
+  const len = fullText.length;
+  const durMs =
+    audioEl && !isNaN(audioEl.duration) && audioEl.duration > 0
+      ? audioEl.duration * 1000 * 0.92
+      : Math.min(14000, len * 42);
+  const steps = Math.max(24, Math.min(200, Math.ceil(len / 4)));
+  const chunk = Math.max(2, Math.ceil(len / steps));
+  let idx = 0;
+  const tick = Math.max(28, durMs / steps);
+  bar._revealTimer = setInterval(() => {
+    idx += chunk;
+    if (idx >= len) {
+      bar.textContent = fullText;
+      trimTtsOverflowFromStart(bar);
+      clearInterval(bar._revealTimer);
+      bar._revealTimer = null;
+      return;
+    }
+    bar.textContent = fullText.slice(0, idx) + '…';
+    trimTtsOverflowFromStart(bar);
+  }, tick);
+}
+
+function startWakeRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    console.warn('호출어 인식(Web Speech API)을 사용할 수 없습니다. 마이크 버튼·VAD만 사용됩니다.');
+    return;
+  }
+  // 이미 생성됐으면 재시작만 (ensureVoiceAudio·첫 제스처 부트가 중복 호출될 수 있음)
+  if (voiceWakeRec) {
+    try {
+      voiceWakeRec.start();
+    } catch (_) {}
+    return;
+  }
+  wakeRecognitionReady = true;
+  voiceWakeRec = new SR();
+  voiceWakeRec.lang = 'ko-KR';
+  voiceWakeRec.continuous = true;
+  voiceWakeRec.interimResults = true;
+  voiceWakeRec.onresult = (e) => {
+    if (voicePipelineBusy || voiceState !== 'IDLE' || voiceRecordingActive) return;
+    // 누적 전체 문장 기준으로 매칭 (interim·최종 결과 혼합)
+    let text = '';
+    for (let i = 0; i < e.results.length; i++) {
+      text += e.results[i][0].transcript;
+    }
+    if (matchesWakeWord(text)) {
+      extendVoiceSession();
+      void beginListeningFromTrigger('wake');
+    }
+  };
+  voiceWakeRec.onerror = (e) => {
+    if (e.error !== 'no-speech' && e.error !== 'aborted') console.warn('Wake STT:', e.error);
+  };
+  voiceWakeRec.onend = () => {
+    if (voiceState === 'IDLE' && wakeRecognitionReady && !voiceRecordingActive) {
+      setTimeout(() => resumeWakeRecognition(), 200);
+    }
+  };
+  try {
+    voiceWakeRec.start();
+  } catch (err) {
+    console.warn('호출어 recognition.start 실패:', err);
+  }
+}
+
+/** 마이크 버튼 없이도 호출어를 쓰려면, 첫 클릭/키 입력으로 Web Speech 리스너를 켠다. */
+function installVoiceWakeBoot() {
+  if (!window.AudioWorklet) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  let booted = false;
+  const boot = () => {
+    if (booted) return;
+    booted = true;
+    document.removeEventListener('pointerdown', boot, true);
+    document.removeEventListener('keydown', boot, true);
+    try {
+      startWakeRecognition();
+    } catch (err) {
+      console.warn('호출어 부트 실패', err);
+    }
+  };
+  document.addEventListener('pointerdown', boot, { capture: true });
+  document.addEventListener('keydown', boot, { capture: true });
+}
+installVoiceWakeBoot();
+
+voiceBtn.addEventListener('click', async () => {
+  if (window.AudioWorklet) {
+    try {
+      await ensureVoiceAudio();
+    } catch (e) {
+      console.error(e);
+      alert('마이크 권한이 필요합니다.');
+      return;
+    }
+    if (!voiceRecordingActive && voicePipelineBusy) return;
+    if (voiceRecordingActive) {
+      voiceSilenceAccum = VOICE_SILENCE_MS;
+      await finishVoiceRecording();
+      return;
+    }
+    extendVoiceSession();
+    await beginListeningFromTrigger('manual');
+    return;
+  }
+  if (!recognition) {
+    alert('이 브라우저에서는 음성 입력을 지원하지 않습니다.');
+    return;
+  }
+  if (isRecording) { recognition.stop(); }
+  else {
+    msgInput.value = '';
+    sttTranscript = '';
+    isRecording = true;
+    voiceBtn.classList.add('recording');
+    recognition.start();
+  }
+});
+
+let recognition = null;
+let isRecording = false;
 let sttTranscript = '';
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+if (!window.AudioWorklet && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
   recognition.lang = 'ko-KR';
   recognition.interimResults = true;
   recognition.continuous = false;
-
   recognition.onresult = (e) => {
     const t = Array.from(e.results).map(r => r[0].transcript).join('');
     const finals = Array.from(e.results).filter(r => r.isFinal).map(r => r[0].transcript).join('');
@@ -2623,18 +3383,6 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     if (e.error !== 'no-speech') console.error('STT:', e.error);
   };
 }
-
-voiceBtn.addEventListener('click', () => {
-  if (!recognition) { alert('Chrome 브라우저를 사용해 주세요.'); return; }
-  if (isRecording) { recognition.stop(); }
-  else {
-    msgInput.value = '';
-    sttTranscript = '';
-    isRecording = true;
-    voiceBtn.classList.add('recording');
-    recognition.start();
-  }
-});
 
 // ── Emotion Report ───────────────────────
 const reportOverlay = document.getElementById('reportOverlay');

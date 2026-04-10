@@ -1,12 +1,24 @@
 """
 FastAPI 엔트리포인트: /chat, /extract-memory 엔드포인트 + 정적 파일 서빙.
+FastAPI 엔트리포인트 — 비동기 섀도우 파이프라인
+[아키텍처]
+  /stt  → Google STT만 await → transcript + request_id 즉시 반환
+         → BackgroundTask: HuBERT 음성 감정 분석 → 캐시 저장
+  /chat → LLM 답변 우선 생성 → 즉시 반환
+         → BackgroundTask: shadow_settlement_process
+           (텍스트 감정 + 캐시 폴링 + Soft Voting + 세션/DB 갱신)
 """
 
 import asyncio
+import base64
 import logging
 import re
+import time
+import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -19,15 +31,21 @@ from pydantic import BaseModel
 
 from app.database import (
     save_chat_message,
+    save_chat_message_with_emotion,
     get_senior_profile,
     get_weekly_reports,
     get_daily_reports_since,
     get_user_messages_since,
     list_recent_memories,
+    list_daily_sentiment_stats,
     log_intervention,
     update_intervention_response,
     get_recent_interventions,
 )
+
+from app.config import VOICE_EMOTION_CACHE, get_settings
+from app.sentiment_inference import analyze_audio_sentiment, analyze_text_sentiment, load_soft_voting_params
+
 from app.report_monthly_keywords_llm import extract_monthly_keywords_with_llm
 from app.report_caregiver_data import build_mood_weather_calendar_14d, extract_monthly_keywords, normalize_report_date_key, month_start_iso_for_chat_filter
 from app.report_reminiscence_llm import filter_positive_memory_candidates, generate_reminiscence_lines
@@ -36,13 +54,13 @@ from app.memory_agent import extract_memories
 from app.rag import empathetic_chat
 from app.stt import transcribe_bytes
 from app.reminiscence import build_morning_brief, generate_reminiscence_welcome
-from app.config import get_settings
 from app.schemas import (
     ChatRequest,
     ChatResponse,
     ExtractedMemoryItem,
     ExtractMemoryRequest,
     ExtractMemoryResponse,
+    ExtractionResult,
     ParseScheduleRequest,
     ParseScheduleResponse,
 )
@@ -70,6 +88,221 @@ app.add_middleware(
 
 _extract_lock = asyncio.Lock()
 
+_VOICE_CACHE_LOCK = asyncio.Lock()
+
+# request_id → STT·채팅 메타 (섀도우 정산 전까지 누적)
+_SHADOW_TURN_LOCK = asyncio.Lock()
+SHADOW_TURN_BUFFER: dict[str, dict] = {}
+
+EMOTION_SCORE_MAP = {
+    "공포": 6.0,
+    "슬픔": 4.0,
+    "분노": 3.0,
+    "혐오": 2.0,
+    "놀람": 0.0,
+    "중립": 0.0,
+    "기쁨": -6.0,
+}
+
+
+def _generate_request_id() -> str:
+    return f"req_{int(time.time() * 1000)}_{uuid.uuid4().hex[:10]}"
+
+
+def _expected_value(prob_map: dict | None) -> float:
+    if not isinstance(prob_map, dict):
+        return 0.0
+    total = 0.0
+    for emotion, prob in prob_map.items():
+        total += float(prob) * float(EMOTION_SCORE_MAP.get(str(emotion), 0.0))
+    return total
+
+
+def _apply_soft_voting(text_emotion: dict, voice_emotion: dict | None) -> tuple[str, float, float, dict]:
+    params = load_soft_voting_params()
+    w_text = float(params["w_text"])
+    w_audio = float(params["w_audio"])
+    neutral_margin = float(params["neutral_margin"])
+
+    text_probs = text_emotion.get("probs") or {}
+    voice_probs = (voice_emotion or {}).get("probs") or {}
+    labels = list(EMOTION_SCORE_MAP.keys())
+
+    combined: dict[str, float] = {}
+    for label in labels:
+        combined[label] = (w_text * float(text_probs.get(label, 0.0))) + (w_audio * float(voice_probs.get(label, 0.0)))
+
+    top_label = max(combined, key=combined.get)
+    non_neutral = {k: v for k, v in combined.items() if k != "중립"}
+    best_non_neutral = max(non_neutral, key=non_neutral.get)
+
+    if top_label == "중립":
+        if float(combined["중립"] - non_neutral[best_non_neutral]) < neutral_margin:
+            top_label = best_non_neutral
+
+    top_score = float(combined[top_label])
+    incongruence_score = abs(_expected_value(text_probs) - _expected_value(voice_probs))
+
+    return top_label, top_score, incongruence_score, {
+        "w_text": w_text,
+        "w_audio": w_audio,
+        "neutral_margin": neutral_margin,
+        "text_probs": text_probs,
+        "voice_probs": voice_probs,
+        "combined_probs": combined,
+        "final_emotion": top_label,
+        "final_score": top_score,
+    }
+
+
+async def _cache_voice_emotion(request_id: str, voice_emotion: dict) -> None:
+    now_ts = time.time()
+    async with _VOICE_CACHE_LOCK:
+        VOICE_EMOTION_CACHE[request_id] = {"voice_emotion": voice_emotion, "stored_at": now_ts}
+
+
+def _sweep_stale_voice_cache_unlocked(now_ts: float, ttl: float) -> None:
+    stale_keys = [
+        key
+        for key, item in VOICE_EMOTION_CACHE.items()
+        if (now_ts - float(item.get("stored_at", 0.0))) > ttl
+    ]
+    for key in stale_keys:
+        VOICE_EMOTION_CACHE.pop(key, None)
+
+
+async def _pop_voice_emotion(request_id: str) -> dict | None:
+    """캐시에 이미 있으면 즉시 꺼냄(대기 없음). 섀도우 정산에는 `_wait_and_pop_voice_emotion` 사용."""
+    settings = get_settings()
+    ttl = float(settings.voice_emotion_cache_ttl_seconds)
+    now_ts = time.time()
+    async with _VOICE_CACHE_LOCK:
+        _sweep_stale_voice_cache_unlocked(now_ts, ttl)
+        row = VOICE_EMOTION_CACHE.pop(request_id, None)
+    if not row:
+        return None
+    return row.get("voice_emotion")
+
+
+async def _wait_and_pop_voice_emotion(request_id: str) -> dict | None:
+    """`/stt` 백그라운드 HuBERT가 끝나 캐시에 올라올 때까지 대기 후 pop.
+
+    `/chat` 응답은 빠르게 나가고, 섀도우 태스크가 여기서 잠깐 기다리면
+    `voice_emotion`이 None이 되는 레이스를 줄인다.
+    """
+    settings = get_settings()
+    ttl = float(settings.voice_emotion_cache_ttl_seconds)
+    wait_max = float(settings.voice_emotion_shadow_wait_seconds)
+    poll = 0.15
+    deadline = time.time() + wait_max
+
+    while time.time() < deadline:
+        async with _VOICE_CACHE_LOCK:
+            now_ts = time.time()
+            _sweep_stale_voice_cache_unlocked(now_ts, ttl)
+            if request_id in VOICE_EMOTION_CACHE:
+                row = VOICE_EMOTION_CACHE.pop(request_id, None)
+                if row:
+                    ve = row.get("voice_emotion")
+                    logger.info("음성 감정 캐시 수신: request_id=%s", request_id)
+                    return ve
+        await asyncio.sleep(poll)
+
+    logger.warning(
+        "음성 감정 캐시 없음(분석 지연·실패 또는 타임아웃 %.1fs): request_id=%s",
+        wait_max,
+        request_id,
+    )
+    return None
+
+
+async def _background_audio_analysis(request_id: str, audio_bytes: bytes) -> None:
+    try:
+        voice_emotion = await asyncio.to_thread(analyze_audio_sentiment, audio_bytes)
+        await _cache_voice_emotion(request_id, voice_emotion)
+        logger.info("음성 감정 캐시 저장 완료: request_id=%s emotion=%s", request_id, voice_emotion.get("top_emotion"))
+    except Exception:
+        logger.exception("백그라운드 음성 감정 분석 실패: request_id=%s", request_id)
+
+
+async def _register_stt_turn(request_id: str, user_id: str, stt_text: str) -> None:
+    now = time.time()
+    async with _SHADOW_TURN_LOCK:
+        row = SHADOW_TURN_BUFFER.setdefault(request_id, {})
+        row["user_id"] = user_id
+        row["stt_text"] = stt_text
+        row["stt_at"] = now
+
+
+async def _merge_chat_into_shadow(request_id: str, req: ChatRequest, llm_result: dict) -> None:
+    now = time.time()
+    async with _SHADOW_TURN_LOCK:
+        row = SHADOW_TURN_BUFFER.setdefault(request_id, {})
+        row["user_id"] = req.user_id
+        row["message"] = req.message
+        row["request_dump"] = req.model_dump()
+        row["llm_result"] = llm_result
+        row["chat_at"] = now
+
+
+async def _prune_stale_shadow_rows(max_age_seconds: float = 3600.0) -> None:
+    now = time.time()
+    async with _SHADOW_TURN_LOCK:
+        stale = [
+            k
+            for k, v in SHADOW_TURN_BUFFER.items()
+            if now - float(v.get("stt_at", v.get("chat_at", now))) > max_age_seconds
+        ]
+        for k in stale:
+            SHADOW_TURN_BUFFER.pop(k, None)
+
+
+async def _shadow_persist_turn(request_id: str) -> None:
+    """텍스트·음성 감정 + 소프트 보팅 후 사용자/어시스턴트 메시지를 DB에 기록."""
+    async with _SHADOW_TURN_LOCK:
+        row = SHADOW_TURN_BUFFER.pop(request_id, None)
+    if not row or "llm_result" not in row:
+        logger.warning("섀도우 버퍼에 정산할 턴 없음: request_id=%s", request_id)
+        return
+    message = str(row.get("message") or "")
+    user_id = str(row["user_id"])
+    llm_result = row["llm_result"]
+    answer = str(llm_result.get("answer") or "")
+    try:
+        text_emotion, voice_emotion = await asyncio.gather(
+            asyncio.to_thread(analyze_text_sentiment, message),
+            _wait_and_pop_voice_emotion(request_id),
+        )
+        emotion_label, emotion_score, incongruence_score, voting_log = _apply_soft_voting(text_emotion, voice_emotion)
+
+        def _save_user() -> None:
+            save_chat_message_with_emotion(
+                user_id=user_id,
+                role="user",
+                content=message,
+                emotion_label=emotion_label,
+                emotion_score=emotion_score,
+                incongruence_score=incongruence_score,
+                text_emotion=text_emotion,
+                voice_emotion=voice_emotion,
+                soft_voting_log=voting_log,
+            )
+
+        await asyncio.to_thread(_save_user)
+        await asyncio.to_thread(save_chat_message, user_id, "assistant", answer)
+        logger.info("섀도우 DB 저장 완료: request_id=%s emotion=%s", request_id, emotion_label)
+    except Exception:
+        logger.exception("섀도우 정산/저장 실패: request_id=%s", request_id)
+
+
+async def _background_simple_turn(req: ChatRequest, answer: str) -> None:
+    """request_id 없음: 감정 필드 없이 단기 이력만 저장."""
+    try:
+        await asyncio.to_thread(save_chat_message, req.user_id, "user", req.message)
+        await asyncio.to_thread(save_chat_message, req.user_id, "assistant", answer)
+    except Exception:
+        logger.exception("단순 턴 저장 실패: user_id=%s", req.user_id)
+
 async def _background_extract(user_id: str) -> None:
     """응답 반환 후 백그라운드로 장기기억 추출."""
     if _extract_lock.locked():
@@ -83,60 +316,57 @@ async def _background_extract(user_id: str) -> None:
             logger.exception("백그라운드 기억 추출 실패")
 
 
-def _save_assistant_message_bg(user_id: str, content: str) -> None:
-    """응답 전송 후 단기 로그에 봇 답변 저장."""
-    try:
-        save_chat_message(user_id, role="assistant", content=content)
-    except Exception:
-        logger.exception("어시스턴트 메시지 저장 실패 (백그라운드)")
+async def _shadow_and_extract(request_id: str, user_id: str) -> None:
+    await _shadow_persist_turn(request_id)
+    await _background_extract(user_id)
+
+
+async def _simple_save_and_extract(req: ChatRequest, answer: str) -> None:
+    await _background_simple_turn(req, answer)
+    await _background_extract(req.user_id)
 
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest, bg: BackgroundTasks):
-    """어르신 발화 → RAG 기반 공감형 답변 반환.
+    """Critical path: RAG(임베딩→검색→답변 LLM)만 await. 선택 시 같은 응답에 TTS(MP3) 포함.
 
-    지연 단축: 사용자 메시지 저장과 RAG(임베딩→하이브리드 검색→답변 LLM)를 병렬 처리하고,
-    봇 답변 저장·장기기억 추출은 응답 직후 백그라운드에서 수행한다.
+    request_id가 있으면(권장: /stt 직후) 텍스트·음성 감정·소프트 보팅과 DB 저장은 섀도우에서 수행한다.
     """
-    async def _save_user_message() -> None:
-        await asyncio.to_thread(
-            save_chat_message,
-            req.user_id,
-            "user",
-            req.message,
-        )
-
     try:
-        result, _ = await asyncio.gather(
-            empathetic_chat(
-                user_id=req.user_id,
-                message=req.message,
-                category=req.category,
-                emotion=req.emotion,
-                display_name=req.display_name,
-                gender=req.gender,
-                age=req.age,
-                avatar_id=req.avatar_id,
-            ),
-            _save_user_message(),
+        result = await empathetic_chat(
+            user_id=req.user_id,
+            message=req.message,
+            category=req.category,
+            emotion=req.emotion,
+            display_name=req.display_name,
+            gender=req.gender,
+            age=req.age,
+            avatar_id=req.avatar_id,
         )
     except Exception:
-        logger.exception("RAG 챗봇 또는 사용자 메시지 저장 실패")
+        logger.exception("RAG 챗봇 실패")
         raise HTTPException(status_code=502, detail="답변 생성에 실패했어요. 잠시 후 다시 시도해 주세요.")
 
-    detected_emotion = result.get("detected_emotion", "중립")
-    try:
-        status = await asyncio.to_thread(update_user_emotion, req.user_id, detected_emotion)
-        result["care_level"] = status["care_level"]
-        result["distress_score"] = status["distress_score"]
-        result["distress_score_daily"] = status["distress_score_daily"]
-    except Exception:
-        logger.exception("감정 점수 업데이트 실패")
+    audio_b64: str | None = None
+    if req.include_tts and result.get("answer"):
+        try:
+            mp3 = await asyncio.to_thread(_synthesize_mp3_bytes, result["answer"])
+            audio_b64 = base64.b64encode(mp3).decode("ascii")
+        except Exception:
+            logger.exception("응답용 TTS 생성 실패 (텍스트만 반환)")
 
-    bg.add_task(_save_assistant_message_bg, req.user_id, result["answer"])
-    bg.add_task(_background_extract, req.user_id)
+    if req.request_id:
+        await _merge_chat_into_shadow(req.request_id, req, result)
+        await _prune_stale_shadow_rows()
+        bg.add_task(_shadow_and_extract, req.request_id, req.user_id)
+    else:
+        bg.add_task(_simple_save_and_extract, req, result["answer"])
 
-    return ChatResponse(**result)
+    return ChatResponse(
+        **result,
+        request_id=req.request_id,
+        audio_base64=audio_b64,
+    )
 
 
 # ── POST /extract-memory ─────────────────────────────────────────────
@@ -156,12 +386,34 @@ async def extract_memory_endpoint(req: ExtractMemoryRequest):
         user_id=req.user_id,
         memories=memories,
     )
+class KobartExtractRequest(BaseModel):
+    user_id: str | None = None
+    limit: int = 50
+    save_to_db: bool = True
+    mark_extracted_after_save: bool = True
+    compare_with_llm: bool = True
+    store_comparison_stats: bool = True
+    source_mode: str = "unextracted"  # unextracted | extracted
+    model_id: str = "gogamza/kobart-summarization"
 
 
 # ── POST /tts ─────────────────────────────────────────────────────────
 
 class TtsRequest(BaseModel):
     text: str
+
+
+@app.post("/extract-memory-kobart", response_model=ExtractionResult)
+async def extract_memory_kobart_endpoint(_req: KobartExtractRequest):
+    """
+    KoBART 기반 장기기억 추출 실험 엔드포인트.
+    source_mode=extracted 로 주면 short_term_history(is_extracted=true)를 기준으로 비교한다.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail="KoBART 추출 모듈이 이 빌드에 포함되어 있지 않습니다.",
+    )
+
 
 _tts_client: texttospeech.TextToSpeechClient | None = None
 
@@ -203,6 +455,27 @@ def _clean_text_for_tts(text: str) -> str:
     return cleaned
 
 
+def _synthesize_mp3_bytes(text: str) -> bytes:
+    client = _get_tts_client()
+    clean_text = _clean_text_for_tts(text)
+    if not clean_text:
+        raise ValueError("empty TTS text")
+    synthesis_input = texttospeech.SynthesisInput(text=clean_text)
+    voice = texttospeech.VoiceSelectionParams(
+        language_code="ko-KR",
+        name="ko-KR-Neural2-A",
+    )
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        speaking_rate=0.95,
+        pitch=1.0,
+    )
+    response = client.synthesize_speech(
+        input=synthesis_input, voice=voice, audio_config=audio_config
+    )
+    return response.audio_content
+
+
 @app.post("/tts")
 async def tts_endpoint(req: TtsRequest):
     """텍스트를 자연스러운 한국어 음성(MP3)으로 변환한다."""
@@ -234,11 +507,14 @@ async def tts_endpoint(req: TtsRequest):
 
 @app.post("/stt")
 async def stt_endpoint(
-    audio: UploadFile = File(..., description="녹음 파일 (권장: WebM/Opus 또는 WAV PCM)"),
+    bg: BackgroundTasks,
+    audio: UploadFile = File(..., description="녹음 파일 (WebM/Opus 또는 WAV LINEAR16; 프론트는 링버퍼+발화를 WAV로 합쳐 전송 가능)"),
+    user_id: str = Form("anonymous"),
     language_code: str = Form("ko-KR"),
     sample_rate_hertz: int = Form(48000),
 ):
-    """Google Cloud Speech-to-Text — 어르신 발화를 텍스트로 변환 (latest_long 모델)."""
+    """Critical path: STT 후 request_id 즉시 반환, 음성감정은 shadow 처리."""
+    """Google Speech-to-Text — WebM/Opus 또는 WAV(실제 샘플레이트는 sample_rate_hertz와 일치)."""
     body = await audio.read()
     if not body:
         raise HTTPException(status_code=400, detail="녹음 데이터가 비어 있습니다.")
@@ -263,8 +539,17 @@ async def stt_endpoint(
             status_code=502,
             detail="음성 인식에 실패했어요. 잠시 후 다시 시도해 주세요.",
         )
-    return {"text": text, "language_code": language_code}
 
+    request_id = _generate_request_id()
+    await _register_stt_turn(request_id, user_id, text)
+    await _prune_stale_shadow_rows()
+    bg.add_task(_background_audio_analysis, request_id, body)
+    return {
+        "text": text,
+        "request_id": request_id,
+        "user_id": user_id,
+        "language_code": language_code,
+    }
 
 # ── GET /profile/{user_id} ────────────────────────────────────────────
 
@@ -408,6 +693,54 @@ async def get_reports(user_id: str, days: int = 7):
     """최근 N일간 일간 케어 리포트 목록 조회."""
     reports = get_weekly_reports(user_id, limit=days)
     return {"user_id": user_id, "reports": reports}
+
+
+@app.get("/memory-benchmark/{user_id}")
+async def memory_benchmark(user_id: str, days: int = 7):
+    """
+    KoBART vs LLM 비교 요약 조회.
+    - daily_sentiment_stats의 kobart_vs_llm 지표 시계열
+    - long_term_memory 최근 메모리 source별 건수
+    """
+    stats = list_daily_sentiment_stats(user_id, limit=max(1, min(days, 60)))
+    trend: list[dict] = []
+    for s in stats:
+        dist = s.get("emotion_distribution") or {}
+        if dist.get("source") != "kobart_vs_llm":
+            continue
+        trend.append(
+            {
+                "report_date": s.get("report_date"),
+                "kobart_memory_count": dist.get("kobart_memory_count"),
+                "llm_memory_count": dist.get("llm_memory_count"),
+                "avg_keyword_overlap_jaccard": dist.get("avg_keyword_overlap_jaccard"),
+                "avg_importance_gap": dist.get("avg_importance_gap"),
+                "model_id": dist.get("model_id"),
+                "total_utterance": s.get("total_utterance"),
+            }
+        )
+
+    memories = list_recent_memories(user_id, limit=300)
+
+    source_counts: dict[str, int] = {}
+    for m in memories:
+        meta = m.get("metadata") or {}
+        src = meta.get("source") or "legacy"
+        source_counts[src] = source_counts.get(src, 0) + 1
+
+    latest = trend[0] if trend else None
+
+    return {
+        "user_id": user_id,
+        "days": days,
+        "latest": latest,
+        "trend": trend,
+        "long_term_memory_source_counts": source_counts,
+        "notes": {
+            "avg_keyword_overlap_jaccard": "KoBART 요약 vs LLM 추출 키워드 자카드 평균",
+            "avg_importance_gap": "KoBART 중요도와 LLM 평균 중요도 차이(낮을수록 유사)",
+        },
+    }
 
 
 # ── GET /report-summary/{user_id} ────────────────────────────────────

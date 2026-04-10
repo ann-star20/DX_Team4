@@ -57,6 +57,50 @@ def save_chat_message(user_id: str, role: str, content: str) -> dict:
     return result.data[0] if result.data else row
 
 
+def save_chat_message_with_emotion(
+    *,
+    user_id: str,
+    role: str,
+    content: str,
+    session_id: str | None = None,
+    emotion_label: str | None = None,
+    emotion_score: float | None = None,
+    incongruence_score: float | None = None,
+    text_emotion: dict | None = None,
+    voice_emotion: dict | None = None,
+    soft_voting_log: dict | None = None,
+) -> dict:
+    sb = get_supabase()
+    row: dict[str, Any] = {
+        "user_id": user_id,
+        "role": role,
+        "content": content,
+        "session_id": session_id,
+        "emotion_label": emotion_label,
+        "emotion_score": emotion_score,
+        "incongruence_score": incongruence_score,
+        "text_emotion": text_emotion,
+        "voice_emotion": voice_emotion,
+        "soft_voting_log": soft_voting_log,
+    }
+    result = sb.table("short_term_history").insert(row).execute()
+    return result.data[0] if result.data else row
+
+
+def list_daily_sentiment_stats(user_id: str, limit: int = 10) -> list[dict]:
+    """일별 감정 통계 시계열 (memory-benchmark 등)."""
+    sb = get_supabase()
+    result = (
+        sb.table("daily_sentiment_stats")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("report_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
 def get_unextracted_conversations(
     user_id: str | None = None,
     limit: int = 50,
