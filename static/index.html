@@ -990,6 +990,12 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
 .mood-cal-cell-14d .mood-cal-dow {
   font-size: 9px; color: #a09894; font-weight: 600;
 }
+/* 주간 정서 피로도 `.bar-col-v2.today .bar-label-v2` 와 동일 톤 */
+.mood-cal-cell-14d.today .mood-cal-dow {
+  font-size: 11px;
+  color: var(--primary);
+  font-weight: 700;
+}
 .mood-cal-cell-14d .mood-cal-dom {
   font-size: 11px; color: var(--text); font-weight: 700;
 }
@@ -2700,6 +2706,8 @@ function renderCareCalendar(cal) {
     ? `${fmt(cal.start_date)} ~ ${fmt(cal.end_date)}`
     : '최근 14일';
 
+  const endKey = cal.end_date ? String(cal.end_date).slice(0, 10) : '';
+
   let html = `<div class="mood-calendar-14d-title">${rangeLine}</div>`;
   html += '<div class="mood-calendar-14d-grid">';
   cal.days.forEach((d) => {
@@ -2709,8 +2717,12 @@ function renderCareCalendar(cal) {
     if (b === 'CALM') extra = 'calm';
     else if (b === 'FAIR') extra = 'fair';
     else if (b === 'CAUTION') extra = 'caution';
-    html += `<div class="mood-cal-cell-14d">
-      <span class="mood-cal-dow">${d.weekday || ''}</span>
+    const dayKey = d.date ? String(d.date).slice(0, 10) : '';
+    const isToday = Boolean(endKey && dayKey && dayKey === endKey);
+    const dowText = isToday ? '오늘' : (d.weekday || '');
+    const cellClass = 'mood-cal-cell-14d' + (isToday ? ' today' : '');
+    html += `<div class="${cellClass}">
+      <span class="mood-cal-dow">${dowText}</span>
       <span class="mood-cal-dom">${d.day != null ? d.day : ''}</span>
       <span class="care-cal-dot ${extra}"></span>
     </div>`;
