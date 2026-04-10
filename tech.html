@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>부문별 기술 스택 - 인포그래픽</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700;800&display=swap');
+        
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #ffffff;
+            color: #1e293b;
+        }
+
+        .category-box {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px 16px;
+            position: relative;
+            background-color: #ffffff;
+            min-height: 160px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .category-title {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 0 16px;
+            font-size: 13px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            white-space: nowrap;
+        }
+
+        .tech-group {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 0.5rem;
+        }
+
+        .tech-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 65px;
+        }
+
+        .icon-wrapper {
+            width: 48px;
+            height: 48px;
+            background-color: #f8fafc;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            border: 1px solid #f1f5f9;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .tech-item:hover .icon-wrapper {
+            transform: translateY(-4px);
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+            color: #3b82f6;
+            box-shadow: 0 8px 12px -3px rgba(59, 130, 246, 0.15);
+        }
+
+        .tech-label {
+            font-size: 9px;
+            font-weight: 700;
+            text-align: center;
+            color: #475569;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .header-bar {
+            background-color: #1e1b4b;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 13px;
+            border-radius: 6px;
+            margin-bottom: 40px;
+            letter-spacing: 0.2em;
+        }
+
+        .sub-group-label {
+            width: 100%;
+            text-align: center;
+            font-size: 9px;
+            font-weight: 700;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        /* Deep Learning Section Optimization */
+        .dl-grid {
+            display: grid;
+            grid-template-columns: 0.8fr 2.6fr 1.2fr;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .no-wrap-models {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            flex-wrap: nowrap !important; /* Force one line */
+        }
+    </style>
+</head>
+<body class="p-8 flex justify-center items-start min-h-screen">
+
+    <div class="max-w-5xl w-full">
+        <!-- 상단 타이틀 바 -->
+        <div class="header-bar">
+            PROJECT TECHNICAL STACK BY CATEGORY
+        </div>
+
+        <!-- 메인 그리드 레이아웃 -->
+        <div class="grid grid-cols-12 gap-y-10 gap-x-6">
+            
+            <!-- 1. Tool (AI Native Engineering) -->
+            <div class="col-span-12 md:col-span-6 category-box">
+                <span class="category-title">Tool & AI Native</span>
+                <div class="tech-group">
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-wand-magic-sparkles text-indigo-500"></i></div>
+                        <span class="tech-label">Cursor</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-robot text-blue-500"></i></div>
+                        <span class="tech-label">Auto (Agent)</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-microchip text-purple-500"></i></div>
+                        <span class="tech-label">Opus / Sonnet</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-brands fa-github text-xl"></i></div>
+                        <span class="tech-label">GitHub</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Cloud & Infra -->
+            <div class="col-span-12 md:col-span-6 category-box">
+                <span class="category-title">Cloud & Infra</span>
+                <div class="tech-group">
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-brands fa-google text-blue-500"></i></div>
+                        <span class="tech-label">GCP</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-brands fa-docker text-blue-400"></i></div>
+                        <span class="tech-label">Docker</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-microphone-lines text-slate-500"></i></div>
+                        <span class="tech-label">Speech API</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Backend & DB -->
+            <div class="col-span-12 md:col-span-6 category-box">
+                <span class="category-title">Backend & Database</span>
+                <div class="tech-group">
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-brands fa-python text-yellow-500"></i></div>
+                        <span class="tech-label">Python</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-bolt text-blue-500"></i></div>
+                        <span class="tech-label">FastAPI</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-bolt-lightning text-emerald-400"></i></div>
+                        <span class="tech-label">Supabase</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-database text-blue-600"></i></div>
+                        <span class="tech-label">PostgreSQL</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. RAG Engine -->
+            <div class="col-span-12 md:col-span-6 category-box">
+                <span class="category-title">RAG Engine</span>
+                <div class="tech-group">
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-link text-emerald-500"></i></div>
+                        <span class="tech-label">LangChain</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-magnifying-glass-chart text-purple-500"></i></div>
+                        <span class="tech-label">Hybrid Search</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="icon-wrapper"><i class="fa-solid fa-user-gear text-blue-500"></i></div>
+                        <span class="tech-label">Personalized</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. Deep Learning (Refined & One-line Models) -->
+            <div class="col-span-12 category-box bg-slate-50/20 border-blue-100">
+                <span class="category-title text-blue-600">Deep Learning & AI Modeling</span>
+                
+                <div class="dl-grid mt-2">
+                    <!-- Framework -->
+                    <div class="flex flex-col items-center">
+                        <span class="sub-group-label">Framework</span>
+                        <div class="tech-group">
+                            <div class="tech-item">
+                                <div class="icon-wrapper"><i class="fa-solid fa-fire text-orange-600"></i></div>
+                                <span class="tech-label">PyTorch</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Models (FORCED ONE LINE) -->
+                    <div class="flex flex-col items-center border-x border-slate-100 px-6">
+                        <span class="sub-group-label">Models</span>
+                        <div class="no-wrap-models mt-1">
+                            <div class="tech-item">
+                                <div class="icon-wrapper"><i class="fa-solid fa-brain text-indigo-500"></i></div>
+                                <span class="tech-label">KcELECTRA</span>
+                            </div>
+                            <div class="tech-item">
+                                <div class="icon-wrapper"><i class="fa-solid fa-wave-square text-orange-400"></i></div>
+                                <span class="tech-label">HuBERT</span>
+                            </div>
+                            <div class="tech-item">
+                                <div class="icon-wrapper">
+                                    <svg class="w-7 h-7 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M12 2L14.8 9.2L22 12L14.8 14.8L12 22L9.2 14.8L2 12L9.2 9.2L12 2Z" />
+                                    </svg>
+                                </div>
+                                <span class="tech-label">Gemini 2.5</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Training Strategies -->
+                    <div class="flex flex-col items-center">
+                        <span class="sub-group-label">Strategies</span>
+                        <div class="tech-group">
+                            <div class="tech-item">
+                                <div class="icon-wrapper"><i class="fa-solid fa-gears text-blue-500"></i></div>
+                                <span class="tech-label">LoRA</span>
+                            </div>
+                            <div class="tech-item">
+                                <div class="icon-wrapper"><i class="fa-solid fa-microchip text-slate-500"></i></div>
+                                <span class="tech-label">DAPT</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 하단 정보 -->
+        <div class="mt-12 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+            End-to-End Emotion & Memory Flow Architecture
+        </div>
+    </div>
+
+</body>
+</html>

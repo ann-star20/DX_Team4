@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시스템 흐름도 - 가로형 아키텍처</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: white;
+            color: #334155;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow-x: auto;
+        }
+        .flow-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            padding: 4rem;
+            min-width: max-content;
+        }
+        .node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            width: 100px;
+        }
+        .icon-box {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        .icon-box:hover {
+            transform: scale(1.05);
+        }
+        .arrow-h {
+            color: #cbd5e1;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+        }
+        .label { font-size: 0.7rem; font-weight: 800; text-align: center; white-space: nowrap; }
+        .sub-label { font-size: 0.6rem; color: #64748b; text-align: center; white-space: nowrap; }
+
+        /* Path Containers */
+        .parallel-box {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            padding: 1rem;
+            background-color: #f8fafc;
+            border-radius: 20px;
+            border: 1px solid #f1f5f9;
+        }
+
+        /* Colors */
+        .c-user { background-color: #f8fafc; color: #475569; }
+        .c-audio { background-color: #fff7ed; color: #ea580c; }
+        .c-stt { background-color: #eff6ff; color: #2563eb; }
+        .c-text { background-color: #f0fdf4; color: #16a34a; }
+        .c-db { background-color: #f5f3ff; color: #7c3aed; }
+        .c-llm { 
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%); 
+            color: white; 
+        }
+        .c-tts { background-color: #fdf2f8; color: #db2777; }
+
+        .logic-tag {
+            position: absolute;
+            bottom: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            background: #f1f5f9;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 700;
+            color: #94a3b8;
+            letter-spacing: 1px;
+        }
+
+        /* Gemini Icon Animation */
+        .gemini-symbol {
+            animation: breathe 3s infinite ease-in-out;
+        }
+        @keyframes breathe {
+            0%, 100% { filter: drop-shadow(0 0 2px #60a5fa); }
+            50% { filter: drop-shadow(0 0 8px #60a5fa); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="flow-wrapper relative">
+        
+        <!-- STEP 1: Input -->
+        <div class="node">
+            <div class="icon-box c-user">
+                <i class="fa-solid fa-microphone"></i>
+            </div>
+            <span class="label">User Voice</span>
+            <span class="sub-label">Input</span>
+        </div>
+
+        <div class="arrow-h"><i class="fa-solid fa-arrow-right-long"></i></div>
+
+        <!-- STEP 2: Parallel Analysis (HuBERT & STT) -->
+        <div class="parallel-box">
+            <div class="node">
+                <div class="icon-box c-audio">
+                    <i class="fa-solid fa-wave-square"></i>
+                </div>
+                <span class="label">HuBERT</span>
+                <span class="sub-label">Acoustic Logic</span>
+            </div>
+            <div class="node">
+                <div class="icon-box c-stt">
+                    <i class="fa-solid fa-file-audio"></i>
+                </div>
+                <span class="label">GCP STT</span>
+                <span class="sub-label">Transcribe</span>
+            </div>
+        </div>
+
+        <div class="arrow-h"><i class="fa-solid fa-arrow-right-long"></i></div>
+
+        <!-- STEP 3: Parallel Logic (KcELECTRA & RAG) -->
+        <div class="parallel-box">
+            <div class="node">
+                <div class="icon-box c-text">
+                    <i class="fa-solid fa-font"></i>
+                </div>
+                <span class="label">KcELECTRA</span>
+                <span class="sub-label">Semantic Logic</span>
+            </div>
+            <div class="node">
+                <div class="icon-box c-db">
+                    <i class="fa-solid fa-magnifying-glass-location"></i>
+                </div>
+                <span class="label">Hybrid Search</span>
+                <span class="sub-label">Supabase RAG</span>
+            </div>
+        </div>
+
+        <div class="arrow-h"><i class="fa-solid fa-arrow-right-long"></i></div>
+
+        <!-- STEP 4: LLM (Gemini 2.5) -->
+        <div class="node">
+            <div class="icon-box c-llm shadow-xl scale-110 relative">
+                <!-- Gemini Custom SVG Icon -->
+                <svg class="gemini-symbol w-8 h-8 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L14.8 9.2L22 12L14.8 14.8L12 22L9.2 14.8L2 12L9.2 9.2L12 2Z" />
+                </svg>
+            </div>
+            <span class="label mt-2">Gemini 2.5</span>
+            <span class="sub-label">Reasoning</span>
+        </div>
+
+        <div class="arrow-h"><i class="fa-solid fa-arrow-right-long"></i></div>
+
+        <!-- STEP 5: TTS Output -->
+        <div class="node">
+            <div class="icon-box c-tts">
+                <i class="fa-solid fa-volume-high"></i>
+            </div>
+            <span class="label">GCP TTS</span>
+            <span class="sub-label">Audio Result</span>
+        </div>
+
+        <!-- Bottom Tag -->
+        <div class="logic-tag uppercase">
+            End-to-End Emotion & Memory Flow
+        </div>
+
+    </div>
+
+</body>
+</html>

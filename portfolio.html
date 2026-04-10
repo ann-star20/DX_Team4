@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[마음-이음] TV 셋톱박스 기반 시니어 정서 케어 솔루션</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+            background-color: #fcfcfc;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        .fade-in {
+            animation: fadeIn 0.4s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+    </style>
+    <!-- Chosen Palette: 따뜻한 웜 톤 뉴트럴 (Background: #fcfcfc), 신뢰감 있는 네이비/슬레이트 (Primary: #1e293b, #334155), 정서적 온기를 나타내는 코랄/오렌지 (Accent: #f97316, #fb923c) -->
+    <!-- Application Structure Plan: 이 SPA는 B2G(지자체/공공기관) 의사결정자 및 이해관계자가 프로젝트의 핵심 가치와 기술력을 빠르게 파악할 수 있도록 탭 기반 대시보드 구조로 설계되었습니다. '프로젝트 개요'에서는 시장의 페인 포인트와 솔루션을, '핵심 기술력'에서는 정서 모니터링 및 AI 기술의 정량적 우수성을, '비즈니스 가치'에서는 수익 모델과 기대 효과를 탐색할 수 있습니다. 각 섹션은 선형적인 보고서 형태를 벗어나, 인터랙티브 차트와 그리드 레이아웃을 통해 정보를 직관적이고 능동적으로 탐색할 수 있도록 유도합니다. -->
+    <!-- Visualization & Content Choices: 1. 인구통계 (도넛 차트): 81.2%라는 핵심 타겟층 비율을 시각적으로 강조하여 문제의 규모를 체감하도록 구성. 2. 성능 평가 (막대 차트): 텍스트의 'Macro-F1, Recall 중심 성능 검증'을 직관적으로 설명하기 위해 Base 모델과 DAPT+LoRA 적용 모델의 성능을 비교하는 시뮬레이션 데이터를 차트화함. 단순 텍스트보다 기술적 차별성(데이터 불균형 해소)을 명확히 전달. 3. 아키텍처 및 스택 (인터랙티브 그리드 뷰): 복잡한 기술 스택을 모듈화된 카드 형태로 배치하여 호버 시 강조되도록 처리 (NO SVG 준수, HTML/CSS로만 구현). -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col md:flex-row">
+
+    <nav class="w-full md:w-64 bg-slate-900 text-slate-100 flex-shrink-0 md:h-screen md:sticky top-0 z-50 flex flex-col shadow-xl">
+        <div class="p-6 bg-slate-950 border-b border-slate-800">
+            <h1 class="text-xl font-bold text-white tracking-tight break-keep">
+                <span class="text-orange-500">마음-이음</span><br>
+                <span class="text-sm font-normal text-slate-400 mt-1 block">시니어 정서 케어 솔루션</span>
+            </h1>
+        </div>
+        <div class="p-4 flex-1 overflow-y-auto space-y-2" id="nav-menu">
+            <button onclick="navigate('overview')" id="btn-overview" class="w-full text-left px-4 py-3 rounded-lg bg-orange-500 text-white font-medium transition-colors duration-200 flex items-center gap-3">
+                <span class="text-lg">📺</span> 프로젝트 개요
+            </button>
+            <button onclick="navigate('tech')" id="btn-tech" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 font-medium transition-colors duration-200 flex items-center gap-3">
+                <span class="text-lg">🧠</span> 핵심 기술력
+            </button>
+            <button onclick="navigate('business')" id="btn-business" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 font-medium transition-colors duration-200 flex items-center gap-3">
+                <span class="text-lg">🏢</span> 비즈니스 모델
+            </button>
+        </div>
+        <div class="p-6 bg-slate-900 border-t border-slate-800">
+            <p class="text-xs text-slate-400 leading-relaxed">
+                <strong class="text-slate-200">기획 및 개발</strong><br>
+                [귀하의 성함]<br>
+                통계학 기반 데이터 분석 및<br>딥러닝 기반 AI 서비스 구현
+            </p>
+        </div>
+    </nav>
+
+    <main class="flex-1 p-6 md:p-10 lg:p-12 overflow-y-auto bg-slate-50 relative">
+        <header class="mb-10 max-w-5xl mx-auto">
+            <div class="inline-block px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-semibold mb-4 border border-orange-200">
+                TV 셋톱박스 기반 AI 말벗
+            </div>
+            <h2 class="text-3xl md:text-4xl font-bold text-slate-900 mb-4 tracking-tight">
+                기술로 허무는 침묵의 벽,<br>데이터로 잇는 어르신의 마음
+            </h2>
+        </header>
+
+        <section id="overview" class="max-w-5xl mx-auto fade-in block">
+            <div class="mb-8">
+                <p class="text-lg text-slate-600 leading-relaxed">
+                    이 섹션에서는 '마음-이음' 솔루션이 탄생하게 된 <strong>배경과 시장의 현황, 그리고 우리가 제안하는 새로운 패러다임</strong>을 살펴볼 수 있습니다. 현재 시니어 돌봄 시스템의 한계를 진단하고, 어르신들의 가장 익숙한 환경인 TV를 활용한 혁신적인 접근 방식을 시각 데이터와 함께 확인해 보십시오.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                <div class="glass-panel rounded-2xl p-8 shadow-sm flex flex-col justify-center">
+                    <div class="mb-6">
+                        <span class="text-4xl mb-4 block">📊</span>
+                        <h3 class="text-xl font-bold text-slate-800 mb-2">시장 현황 및 타겟</h3>
+                        <p class="text-slate-600">LG헬로비전 전체 고객 중 50대 이상 고령층이 차지하는 비중입니다.</br> 초고령화 시대에 대응하는 실효성 있는 케어 솔루션이 시급합니다.</p>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="marketChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-6">
+                    <div class="glass-panel rounded-2xl p-8 shadow-sm border-l-4 border-slate-400">
+                        <h3 class="text-lg font-bold text-slate-800 mb-2">🚨 현재의 페인 포인트 (Pain Point)</h3>
+                        <p class="text-slate-600">
+                            현행 돌봄 시스템은 움직임 감지 등 <strong>'물리적 안전(거동 확인)'</strong>에 편중되어 있습니다. 정작 어르신들에게 가장 필요하고 절실한 <strong>'정서적 연결고리'</strong>는 철저히 부재한 상황입니다.
+                        </p>
+                    </div>
+
+                    <div class="glass-panel rounded-2xl p-8 shadow-sm border-l-4 border-orange-500 bg-orange-50/30">
+                        <h3 class="text-lg font-bold text-orange-700 mb-2">💡 해결 방안 (Solution)</h3>
+                        <p class="text-slate-700">
+                            어르신들에게 가장 익숙한 가전인 <strong>'TV 셋톱박스'</strong>를 매개체로 활용합니다. 별도의 낯선 스마트 기기 학습 없이, 목소리와 감정을 이해하는 <strong>'상시적 말벗 AI'</strong>를 기획하여 정서적 고립감을 해소합니다.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tech" class="max-w-5xl mx-auto fade-in hidden">
+            <div class="mb-8">
+                <p class="text-lg text-slate-600 leading-relaxed">
+                    이 섹션에서는 '마음-이음'을 구동하는 <strong>핵심 기능과 고도화된 AI 기술 스택</strong>을 상세히 다룹니다. 일반적인 챗봇을 넘어선 '하이브리드 RAG' 모델의 작동 방식과, 시니어 특화 감정을 정확히 분류해 내는 데이터 불균형 해소 전략(Class Weighting)의 실제 효과를 정량적 차트로 검증해 보십시오.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <div class="bg-white rounded-2xl p-8 shadow-sm border border-slate-200">
+                    <h3 class="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <span class="text-2xl">🗣️</span> ① 하이브리드 RAG 초개인화 AI 챗봇
+                    </h3>
+                    <ul class="space-y-4">
+                        <li class="flex items-start gap-3">
+                            <span class="text-orange-500 mt-1">🧠</span>
+                            <div>
+                                <strong class="block text-slate-800">기억하는 AI (Long-term Memory)</strong>
+                                <span class="text-slate-600 text-sm">과거 대화 이력을 데이터화하여 '어제 드신 메뉴'를 묻는 등 연속성 있고 맥락이 이어지는 대화를 수행합니다.</span>
+                            </div>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <span class="text-orange-500 mt-1">🔍</span>
+                            <div>
+                                <strong class="block text-slate-800">기술적 차별점 (Hybrid RAG)</strong>
+                                <span class="text-slate-600 text-sm">의미 기반의 Vector Search와 정확도 기반의 BM25(키워드) 서치를 결합하여 최적의 컨텍스트를 도출, AI 답변의 정확도를 극대화합니다.</span>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="bg-slate-800 rounded-2xl p-8 shadow-sm border border-slate-700 text-white">
+                    <h3 class="text-xl font-bold text-slate-100 mb-4 flex items-center gap-2">
+                        <span class="text-2xl">❤️‍🩹</span> ② 멀티모달 정서 피로도 모니터링 (Main)
+                    </h3>
+                    <ul class="space-y-4">
+                        <li class="flex items-start gap-3">
+                            <span class="text-blue-400 mt-1">🎧</span>
+                            <div>
+                                <strong class="block text-slate-100">감정 인식 (Late Fusion)</strong>
+                                <span class="text-slate-400 text-sm">텍스트(NLP)의 의미 분석과 음성의 음향적 특징(Pitch, Tone)을 동시에 병렬 분석하는 멀티모달 모델을 적용했습니다.</span>
+                            </div>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <span class="text-blue-400 mt-1">🚨</span>
+                            <div>
+                                <strong class="block text-slate-100">심리 방역망 구축</strong>
+                                <span class="text-slate-400 text-sm">분석된 정서 피로도를 수치화하며, 우울감이나 고립감 등 이상 징후 포착 시 보호자 및 지자체에 실시간 알림을 전송합니다.</span>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-2xl p-8 shadow-sm mb-8">
+                <div class="flex flex-col md:flex-row items-center gap-8">
+                    <div class="flex-1">
+                        <h3 class="text-xl font-bold text-slate-800 mb-4">기술적 강점 및 모델 최적화 효과</h3>
+                        <p class="text-slate-600 mb-6 text-sm leading-relaxed">
+                            시니어의 일상 대화는 '중립' 감정이 압도적으로 많아 단순 정확도(Accuracy) 지표는 의미가 없습니다. 저희는 <strong>Sqrt_inv Class Weighting</strong>을 적용하여 '공포', '슬픔'과 같은 소수 감정의 탐지력(Recall)과 <strong>Macro-F1</strong> 점수를 비약적으로 향상시켰습니다.
+                        </p>
+                        <div class="chart-container">
+                            <canvas id="performanceChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="flex-1 w-full overflow-x-auto">
+                        <table class="w-full text-sm text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 border-b border-slate-200">
+                                    <th class="p-3 text-slate-800 font-bold rounded-tl-lg">항목</th>
+                                    <th class="p-3 text-slate-800 font-bold">상세 내용</th>
+                                    <th class="p-3 text-slate-800 font-bold rounded-tr-lg">비고</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr>
+                                    <td class="p-3 font-semibold text-slate-700">백본 모델</td>
+                                    <td class="p-3 text-slate-600"><strong>KcELECTRA</strong> (텍스트)<br><strong>HuBERT</strong> (음성)</td>
+                                    <td class="p-3 text-slate-500">구어체 및 음성 특화</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-3 font-semibold text-slate-700">도메인 최적화</td>
+                                    <td class="p-3 text-slate-600"><strong>DAPT</strong><br><span class="text-xs text-slate-400">(Domain-Adaptive Pre-training)</span></td>
+                                    <td class="p-3 text-slate-500">시니어 특화 데이터로 백본 고도화</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-3 font-semibold text-slate-700">효율적 학습</td>
+                                    <td class="p-3 text-slate-600"><strong>LoRA</strong><br><span class="text-xs text-slate-400">한국어 기반 감정 데이터셋(KEMDy20)</span></td>
+                                    <td class="p-3 text-slate-500">자원 효율화 및 치명적 망각 방지</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-3 font-semibold text-slate-700">불균형 해소</td>
+                                    <td class="p-3 text-slate-600"><strong>Sqrt_inv Class Weighting</strong> 적용</td>
+                                    <td class="p-3 text-slate-500">소수 감정(공포/슬픔 등) 탐지력 강화</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-3 font-semibold text-slate-700">평가 지표</td>
+                                    <td class="p-3 text-slate-600"><strong>Macro-F1, Recall</strong> 중심</td>
+                                    <td class="p-3 text-slate-500">데이터 편향 없는 공정한 모델 평가</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">시스템 스택 (Tech Stack)</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-white border border-slate-200 p-4 rounded-xl text-center hover:border-orange-500 transition-colors">
+                        <div class="text-2xl mb-2">🤖</div>
+                        <div class="font-bold text-slate-800 text-sm">AI / LLM</div>
+                        <div class="text-xs text-slate-500 mt-1">Gemini 2.5 Flash<br>LangChain<br>Hugging Face</div>
+                    </div>
+                    <div class="bg-white border border-slate-200 p-4 rounded-xl text-center hover:border-orange-500 transition-colors">
+                        <div class="text-2xl mb-2">🗄️</div>
+                        <div class="font-bold text-slate-800 text-sm">Data DB</div>
+                        <div class="text-xs text-slate-500 mt-1">Supabase (DB/Auth)<br>pgvector (Vector DB)</div>
+                    </div>
+                    <div class="bg-white border border-slate-200 p-4 rounded-xl text-center hover:border-orange-500 transition-colors">
+                        <div class="text-2xl mb-2">⚙️</div>
+                        <div class="font-bold text-slate-800 text-sm">Backend</div>
+                        <div class="text-xs text-slate-500 mt-1">FastAPI<br>(High Performance Async)</div>
+                    </div>
+                    <div class="bg-white border border-slate-200 p-4 rounded-xl text-center hover:border-orange-500 transition-colors">
+                        <div class="text-2xl mb-2">🚀</div>
+                        <div class="font-bold text-slate-800 text-sm">Deployment</div>
+                        <div class="text-xs text-slate-500 mt-1">Docker<br>Git (CI/CD)</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="business" class="max-w-5xl mx-auto fade-in hidden">
+            <div class="mb-8">
+                <p class="text-lg text-slate-600 leading-relaxed">
+                    마지막으로 '마음-이음' 프로젝트가 창출하는 <strong>실질적인 사회적, 경제적 가치와 비즈니스 모델</strong>을 제시합니다. 단순한 기술 개발을 넘어 지자체와의 협력을 통해 지속 가능한 시니어 돌봄 생태계를 구축하는 청사진을 확인하실 수 있습니다.
+                </p>
+            </div>
+
+            <div class="bg-slate-900 rounded-3xl p-8 md:p-12 text-center text-white mb-10 shadow-lg relative overflow-hidden">
+                <div class="relative z-10">
+                    <span class="inline-block px-4 py-1 bg-white/10 rounded-full text-sm font-semibold mb-6 tracking-wider border border-white/20">BUSINESS MODEL</span>
+                    <h2 class="text-3xl md:text-4xl font-bold mb-4">B2G 기반 시니어 케어 구독 모델</h2>
+                    <p class="text-slate-300 max-w-2xl mx-auto text-lg">
+                        지자체 연계 공공 사업을 통해 지역 사회의 복지 인프라로 자리 잡으며, 안정적이고 지속 가능한 수익 구조와 사회적 가치를 동시에 창출합니다.
+                    </p>
+                </div>
+            </div>
+
+            <h3 class="text-2xl font-bold text-slate-800 mb-6 text-center">프로젝트 기대 효과</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                    <div class="w-12 h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-2xl mb-4">
+                        🤝
+                    </div>
+                    <h4 class="text-xl font-bold text-slate-800 mb-3">사회적 가치 (Social)</h4>
+                    <p class="text-slate-600 text-sm leading-relaxed">
+                        초개인화 챗봇과 정서 피로도 모니터링을 통한 <strong>심리적 방역망</strong> 역할을 수행합니다. 독거노인의 고독사를 예방하고 우울증을 조기 발견하여 건강한 지역사회를 만듭니다.
+                    </p>
+                </div>
+
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                    <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-2xl mb-4">
+                        💰
+                    </div>
+                    <h4 class="text-xl font-bold text-slate-800 mb-3">경제적 효율성 (Economic)</h4>
+                    <p class="text-slate-600 text-sm leading-relaxed">
+                        막대한 인력이 소모되는 기존의 대면 방문 돌봄을 보완합니다. <strong>저비용 고효율의 상시 돌봄 체계</strong>를 구축하여 지자체의 한정된 복지 예산을 효율적으로 재분배할 수 있게 합니다.
+                    </p>
+                </div>
+
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                    <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center text-2xl mb-4">
+                        📈
+                    </div>
+                    <h4 class="text-xl font-bold text-slate-800 mb-3">비즈니스 혁신 (Business)</h4>
+                    <p class="text-slate-600 text-sm leading-relaxed">
+                        가정에 방치된 하드웨어인 <strong>TV를 '단순 시청 기계'에서 '지능형 케어 단말'로 패러다임 전환</strong>시킵니다. 플랫폼 락인(Lock-in) 효과를 극대화하고 헬스케어 데이터 확보의 교두보를 마련합니다.
+                    </p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const appState = {
+            currentView: 'overview',
+            chartsInitialized: {
+                overview: false,
+                tech: false
+            }
+        };
+
+        const chartInstances = {};
+
+        function navigate(viewId) {
+            document.querySelectorAll('section').forEach(sec => {
+                sec.classList.add('hidden');
+                sec.classList.remove('block');
+            });
+            
+            document.querySelectorAll('#nav-menu button').forEach(btn => {
+                btn.classList.remove('bg-orange-500', 'text-white');
+                btn.classList.add('hover:bg-slate-800', 'text-slate-300');
+            });
+
+            const activeSection = document.getElementById(viewId);
+            activeSection.classList.remove('hidden');
+            activeSection.classList.add('block');
+
+            const activeBtn = document.getElementById(`btn-${viewId}`);
+            activeBtn.classList.remove('hover:bg-slate-800', 'text-slate-300');
+            activeBtn.classList.add('bg-orange-500', 'text-white');
+
+            appState.currentView = viewId;
+            initializeChartsForView(viewId);
+        }
+
+        function initializeChartsForView(viewId) {
+            if (viewId === 'overview' && !appState.chartsInitialized.overview) {
+                renderMarketChart();
+                appState.chartsInitialized.overview = true;
+            } else if (viewId === 'tech' && !appState.chartsInitialized.tech) {
+                renderPerformanceChart();
+                appState.chartsInitialized.tech = true;
+            }
+        }
+
+        function renderMarketChart() {
+            const ctx = document.getElementById('marketChart').getContext('2d');
+            chartInstances.market = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['50대 이상 (주요 타겟)', '그 외 고객층'],
+                    datasets: [{
+                        data: [81.2, 18.8],
+                        backgroundColor: [
+                            '#f97316', 
+                            '#e2e8f0'  
+                        ],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: { family: "'Pretendard', sans-serif" },
+                                color: '#475569'
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ' ' + context.label + ': ' + context.parsed + '%';
+                                }
+                            }
+                        }
+                    }
+                },
+                plugins: [{
+                    id: 'textCenter',
+                    beforeDraw: function(chart) {
+                        var width = chart.width,
+                            height = chart.height,
+                            ctx = chart.ctx;
+
+                        ctx.restore();
+                        var fontSize = (height / 110).toFixed(2);
+                        ctx.font = "bold " + fontSize + "em Pretendard";
+                        ctx.textBaseline = "middle";
+                        ctx.fillStyle = "#1e293b";
+
+                        var text = "81.2%",
+                            textX = Math.round((width - ctx.measureText(text).width) / 2),
+                            textY = height / 2 - 10;
+
+                        ctx.fillText(text, textX, textY);
+                        
+                        ctx.font = "normal " + (fontSize*0.35) + "em Pretendard";
+                        ctx.fillStyle = "#64748b";
+                        var text2 = "LG헬로비전 50대+",
+                            textX2 = Math.round((width - ctx.measureText(text2).width) / 2),
+                            textY2 = height / 2 + 20;
+                        ctx.fillText(text2, textX2, textY2);
+                        ctx.save();
+                    }
+                }]
+            });
+        }
+
+        function renderPerformanceChart() {
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            chartInstances.performance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Accuracy', 'Macro-F1 (핵심지표)', 'Recall (위험 감지)'],
+                    datasets: [
+                        {
+                            label: 'Base 모델 (가중치 없음)',
+                            data: [0.82, 0.45, 0.35],
+                            backgroundColor: '#cbd5e1',
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'DAPT + LoRA + Sqrt_inv 적용',
+                            data: [0.78, 0.72, 0.68],
+                            backgroundColor: '#0ea5e9',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1.0,
+                            grid: {
+                                borderDash: [4, 4],
+                                color: '#f1f5f9'
+                            },
+                            ticks: { font: { family: "'Pretendard', sans-serif" } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { family: "'Pretendard', sans-serif" } }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: { family: "'Pretendard', sans-serif" },
+                                color: '#475569',
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeChartsForView('overview');
+        });
+
+    </script>
+</body>
+</html>
