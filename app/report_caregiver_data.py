@@ -1,8 +1,7 @@
-"""보호자 리포트: 이번 달 감정 달력·월간 키워드 가공."""
+"""보호자 리포트: 마음 날씨 달력(14일)·월간 키워드 가공."""
 
 from __future__ import annotations
 
-import calendar
 import re
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
@@ -19,43 +18,69 @@ _KR_STOP = frozenset(
 )
 
 
-def build_care_calendar_month(
+def mood_bucket_from_score(score: float | None) -> str | None:
+    """
+    mood_avg_score(0~100) → UI용 버킷.
+    평온: 0~39, 보통: 40~69, 주의: 70~100
+    """
+    if score is None:
+        return None
+    try:
+        s = float(score)
+    except (TypeError, ValueError):
+        return None
+    if s < 40:
+        return "CALM"
+    if s < 70:
+        return "FAIR"
+    return "CAUTION"
+
+
+def build_mood_weather_calendar_14d(
     today: date,
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """
-    rows: [{report_date, today_care_level}, ...]
-    이번 달 1일~오늘까지 셀 + JS getDay()용 첫 요일.
+    최근 14일(오늘 포함) 마음 날씨 달력.
+    rows: [{report_date, mood_avg_score}, ...]
     """
-    y, m = today.year, today.month
-    level_by_date: dict[str, str | None] = {}
+    score_by_date: dict[str, float | None] = {}
     for r in rows:
         ds = r.get("report_date")
         if not ds:
             continue
         ds = str(ds)
-        lv = r.get("today_care_level")
-        if isinstance(lv, str) and lv in ("NORMAL", "WARNING", "DANGER"):
-            level_by_date[ds] = lv
+        raw = r.get("mood_avg_score")
+        if raw is None:
+            score_by_date[ds] = None
         else:
-            level_by_date[ds] = None
+            try:
+                score_by_date[ds] = float(raw)
+            except (TypeError, ValueError):
+                score_by_date[ds] = None
 
-    _, last_day = calendar.monthrange(y, m)
-    first = date(y, m, 1)
-    first_js_weekday = (first.weekday() + 1) % 7
-
+    wd_ko = ["월", "화", "수", "목", "금", "토", "일"]
     days: list[dict[str, Any]] = []
-    for d in range(1, last_day + 1):
-        dd = date(y, m, d)
-        if dd > today:
-            break
+    for i in range(13, -1, -1):
+        dd = today - timedelta(days=i)
         ds = dd.isoformat()
-        days.append({"day": d, "date": ds, "level": level_by_date.get(ds)})
+        sc_val = score_by_date.get(ds)
+        bucket = mood_bucket_from_score(sc_val)
+        days.append(
+            {
+                "date": ds,
+                "day": dd.day,
+                "weekday": wd_ko[dd.weekday()],
+                "mood_bucket": bucket,
+                "score": round(sc_val, 1) if sc_val is not None else None,
+            }
+        )
 
+    start_d = today - timedelta(days=13)
     return {
-        "year": y,
-        "month": m,
-        "first_weekday_js": first_js_weekday,
+        "kind": "14d",
+        "start_date": start_d.isoformat(),
+        "end_date": today.isoformat(),
         "days": days,
     }
 
