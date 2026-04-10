@@ -29,13 +29,15 @@ from app.emotion import update_user_emotion, update_action_fatigue
 from app.memory_agent import extract_memories
 from app.rag import empathetic_chat
 from app.stt import transcribe_bytes
-from app.reminiscence import build_morning_brief
+from app.reminiscence import build_morning_brief, generate_reminiscence_welcome
 from app.schemas import (
     ChatRequest,
     ChatResponse,
     ExtractedMemoryItem,
     ExtractMemoryRequest,
     ExtractMemoryResponse,
+    ParseScheduleRequest,
+    ParseScheduleResponse,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -276,6 +278,103 @@ async def morning_brief(
     if data.get("error") == "no_profile":
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없어요.")
     return data
+
+
+# ── GET /welcome/{user_id} ───────────────────────────────────────────
+
+@app.get("/welcome/{user_id}")
+async def welcome_message(user_id: str, display_name: str | None = None):
+    """
+    채팅 화면 첫 인사 말풍선용 발화문.
+    distress_score >= 40이면 장기기억(emotion 행복계열, importance >= 6)을 활용한
+    긍정 회상 발화문을 LLM으로 생성한다.
+    그 외에는 기본 인사 문구를 반환한다.
+    """
+    from app.database import get_senior_profile as _gsp
+    profile = _gsp(user_id)
+    distress = float((profile or {}).get("distress_score") or 0)
+    db_name = (profile or {}).get("name") or None
+    name = display_name or db_name or None
+    name_str = f"{name} 님" if name else "어르신"
+
+    if distress >= 40:
+        msg = await generate_reminiscence_welcome(user_id, name)
+        return {"message": msg, "reminiscence_mode": True, "distress_score": distress}
+
+    return {
+        "message": f"{name_str}, 안녕하세요! 오늘 하루는 어떠셨어요? 편하게 말씀해 주세요.",
+        "reminiscence_mode": False,
+        "distress_score": distress,
+    }
+
+
+# ── POST /parse-schedule ────────────────────────────────────────────
+
+@app.post("/parse-schedule", response_model=ParseScheduleResponse)
+async def parse_schedule(body: ParseScheduleRequest):
+    """
+    사용자 발화에서 일정/루틴 추가 의도와 시간·설명을 LLM으로 추출한다.
+    프론트엔드 채팅창에서 일정 추가 요청 감지 및 내용 요약에 사용한다.
+    """
+    import json as _json
+    import re as _re
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    text = body.text.strip()
+    if not text:
+        return ParseScheduleResponse(is_schedule=False)
+
+    prompt = f"""사용자 발화를 분석하여 일정 또는 루틴 추가 요청인지 판단하고, 맞다면 시간·설명·반복 여부를 추출하세요.
+
+사용자 발화: "{text}"
+
+출력 규칙:
+- is_schedule: 일정/루틴 추가 요청이면 true, 아니면 false
+- time: "HH:MM" 24시간제. 시간 정보가 없으면 null
+- desc: 핵심 내용을 간결하게 요약 (조사·동사·키워드 제거, 명사 위주 5~12자 이내)
+  좋은 예: "병원 진료", "혈압약 복용", "손녀에게 전화", "산책", "점심 식사"
+  나쁜 예: "병원에 가는", "약 먹는 것을 잊지 않", "루틴을 등록"
+- recurring: "매일", "날마다", "항상", "매주", "every day" 등 반복/주기 표현이 있으면 true, 없으면 false
+- 오직 JSON 한 덩어리만 출력. 마크다운 코드펜스 없이.
+
+예시:
+입력: "오후 3시에 병원 예약 있는데 일정 추가해줘"
+출력: {{"is_schedule": true, "time": "15:00", "desc": "병원 예약", "recurring": false}}
+
+입력: "매일 아침 8시에 혈압약 먹는 루틴 등록해줘"
+출력: {{"is_schedule": true, "time": "08:00", "desc": "혈압약 복용", "recurring": true}}
+
+입력: "내일 오전 10시 반에 복지관 노래 교실 일정 넣어줘"
+출력: {{"is_schedule": true, "time": "10:30", "desc": "복지관 노래 교실", "recurring": false}}
+
+입력: "날마다 저녁 7시에 손녀한테 전화하는 루틴 만들어줘"
+출력: {{"is_schedule": true, "time": "19:00", "desc": "손녀 전화", "recurring": true}}
+
+입력: "오늘 날씨 어때?"
+출력: {{"is_schedule": false, "time": null, "desc": null, "recurring": false}}"""
+
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        project=settings.gcp_project_id,
+        location=settings.gcp_location,
+        temperature=0.1,
+        max_output_tokens=80,
+        thinking_budget=0,
+    )
+    try:
+        resp = await llm.ainvoke(prompt)
+        raw = (resp.content or "").strip()
+        raw = _re.sub(r"```[a-z]*\s*|\s*```", "", raw).strip()
+        data = _json.loads(raw)
+        return ParseScheduleResponse(
+            is_schedule=bool(data.get("is_schedule")),
+            time=data.get("time") or None,
+            desc=data.get("desc") or None,
+            recurring=bool(data.get("recurring", False)),
+        )
+    except Exception:
+        logger.exception("일정 파싱 LLM 실패")
+        return ParseScheduleResponse(is_schedule=False)
 
 
 # ── GET /reports/{user_id} ───────────────────────────────────────────

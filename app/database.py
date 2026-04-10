@@ -117,6 +117,39 @@ def list_recent_memories(user_id: str, limit: int = 300) -> list[dict]:
     return result.data or []
 
 
+def get_happy_memories(
+    user_id: str,
+    *,
+    min_importance: int = 6,
+    limit: int = 5,
+) -> list[dict]:
+    """
+    emotion이 행복/기쁨 계열이고 importance_score >= min_importance인 장기기억을 반환한다.
+    중요도 내림차순으로 정렬하여 최상위 limit개를 돌려준다.
+    """
+    HAPPY_EMOTIONS = {"행복", "기쁨", "즐거움", "편안", "만족", "신남", "happy", "joy"}
+    sb = get_supabase()
+    result = (
+        sb.table("long_term_memory")
+        .select("id, content, memory_date, metadata")
+        .eq("user_id", user_id)
+        .order("memory_date", desc=False)
+        .limit(500)
+        .execute()
+    )
+    rows = result.data or []
+    matched = [
+        r for r in rows
+        if int((r.get("metadata") or {}).get("importance_score") or 0) >= min_importance
+        and (r.get("metadata") or {}).get("emotion", "") in HAPPY_EMOTIONS
+    ]
+    matched.sort(
+        key=lambda r: int((r.get("metadata") or {}).get("importance_score") or 0),
+        reverse=True,
+    )
+    return matched[:limit]
+
+
 # ── Senior Profile CRUD ──────────────────────────────────────────────
 
 def get_senior_profile(user_id: str) -> dict | None:

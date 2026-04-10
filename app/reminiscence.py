@@ -10,11 +10,12 @@ from datetime import date
 
 from app.database import (
     get_daily_report,
+    get_happy_memories,
     get_senior_profile,
     list_recent_memories,
     upsert_daily_report,
 )
-from app.emotion import compute_effective_distress_from_profile
+from app.emotion import DAILY_DEFAULT, compute_effective_distress_from_profile
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ def build_morning_brief(
             else:
                 report_data = {
                     "dominant_emotion": "중립",
-                    "mood_avg_score": 50.0,
+                    "mood_avg_score": float(DAILY_DEFAULT),
                     "today_care_level": "DANGER",
                     "total_utterance": 0,
                     "danger_count": 0,
@@ -179,3 +180,70 @@ def build_morning_brief(
             )
 
     return out
+
+
+async def generate_reminiscence_welcome(
+    user_id: str,
+    display_name: str | None = None,
+    *,
+    min_importance: int = 6,
+    memory_count: int = 3,
+) -> str:
+    """
+    distress_score >= 40인 사용자를 위해 장기기억(emotion 행복계열, importance >= 6)을
+    활용한 긍정 회상 발화문을 LLM으로 생성한다.
+
+    발화문은 채팅 화면 첫 인사 말풍선에 표시된다.
+    """
+    from app.config import get_settings
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    name_str = f"{display_name} 님" if display_name else "어르신"
+    memories = get_happy_memories(user_id, min_importance=min_importance, limit=memory_count)
+
+    if not memories:
+        return (
+            f"{name_str}, 안녕하세요! 오늘 하루 어떻게 지내셨어요? "
+            "좋았던 기억이 있으시면 편하게 말씀해 주세요."
+        )
+
+    mem_lines = "\n".join(
+        f"- {r['content']}"
+        + (f" ({r['memory_date']})" if r.get("memory_date") else "")
+        for r in memories
+    )
+
+    prompt = f"""아래는 어르신이 예전에 나눈 행복했던 기억입니다.
+
+{mem_lines}
+
+이 기억을 자연스럽게 1~2개 언급하면서, {name_str}의 마음을 따뜻하게 위로하고
+긍정적인 감정을 불러일으키는 짧은 인사 발화문(2~3문장)을 만들어 주세요.
+
+규칙:
+- AI 티가 나는 표현("기억 데이터에 따르면", "기록에 의하면" 등) 절대 금지
+- 자연스럽고 따뜻한 한국어 존댓말(해요체)
+- 직접 기억을 인용하되 "기억하시나요?" 형식으로 부드럽게 연결
+- 발화문만 출력, 다른 설명 없이"""
+
+    settings = get_settings()
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        project=settings.gcp_project_id,
+        location=settings.gcp_location,
+        temperature=0.85,
+        max_output_tokens=200,
+        thinking_budget=0,
+    )
+    try:
+        resp = await llm.ainvoke(prompt)
+        text = (resp.content or "").strip()
+        if text:
+            return text
+    except Exception:
+        logger.exception("긍정 회상 발화문 생성 실패 user=%s", user_id)
+
+    return (
+        f"{name_str}, 안녕하세요! 오늘도 좋은 하루 보내세요. "
+        "편하게 이야기 나눠봐요."
+    )
