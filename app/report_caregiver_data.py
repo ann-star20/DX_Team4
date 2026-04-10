@@ -38,24 +38,6 @@ _KR_STOP = frozenset(
 )
 
 
-def mood_bucket_from_score(score: float | None) -> str | None:
-    """
-    mood_avg_score(0~100) → UI용 버킷.
-    평온: 0~39, 보통: 40~69, 주의: 70~100
-    """
-    if score is None:
-        return None
-    try:
-        s = float(score)
-    except (TypeError, ValueError):
-        return None
-    if s < 40:
-        return "CALM"
-    if s < 70:
-        return "FAIR"
-    return "CAUTION"
-
-
 def build_mood_weather_calendar_14d(
     today: date,
     rows: list[dict[str, Any]],
@@ -63,6 +45,7 @@ def build_mood_weather_calendar_14d(
     """
     최근 14일(오늘 포함) 마음 날씨 달력.
     rows: [{report_date, mood_avg_score}, ...]
+    score: DB 원점수 mood_avg_score(-30~100). 0~100 환산·색 구간은 프론트에서 처리.
     """
     score_by_date: dict[str, float | None] = {}
     for r in rows:
@@ -84,13 +67,11 @@ def build_mood_weather_calendar_14d(
         dd = today - timedelta(days=i)
         ds = dd.isoformat()
         sc_val = score_by_date.get(ds)
-        bucket = mood_bucket_from_score(sc_val)
         days.append(
             {
                 "date": ds,
                 "day": dd.day,
                 "weekday": wd_ko[dd.weekday()],
-                "mood_bucket": bucket,
                 "score": round(sc_val, 1) if sc_val is not None else None,
             }
         )
