@@ -82,6 +82,28 @@ def mark_as_extracted(chat_ids: list[str]) -> None:
     ).in_("chat_id", chat_ids).execute()
 
 
+def get_user_messages_since(
+    user_id: str,
+    since_iso: str,
+    *,
+    limit: int = 500,
+) -> list[str]:
+    """user 역할 메시지 중 chat_time >= since_iso 인 content 목록 (최신순)."""
+    sb = get_supabase()
+    result = (
+        sb.table("short_term_history")
+        .select("content")
+        .eq("user_id", user_id)
+        .eq("role", "user")
+        .gte("chat_time", since_iso)
+        .order("chat_time", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    rows = result.data or []
+    return [str(r.get("content") or "") for r in rows if r.get("content")]
+
+
 # ── Long-term Memory CRUD ────────────────────────────────────────────
 
 def save_long_term_memory(
@@ -202,6 +224,21 @@ def get_weekly_reports(user_id: str, limit: int = 7) -> list[dict]:
         .select("*")
         .eq("user_id", user_id)
         .order("report_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_daily_reports_since(user_id: str, since_date: str, limit: int = 62) -> list[dict]:
+    """report_date >= since_date 인 일간 리포트 (오름차순). 달력·구간 조회용."""
+    sb = get_supabase()
+    result = (
+        sb.table("daily_care_report")
+        .select("*")
+        .eq("user_id", user_id)
+        .gte("report_date", since_date)
+        .order("report_date", desc=False)
         .limit(limit)
         .execute()
     )
