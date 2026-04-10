@@ -21,6 +21,9 @@ from app.database import (
     save_chat_message,
     get_senior_profile,
     get_weekly_reports,
+    get_daily_reports_since,
+    get_user_messages_since,
+    list_recent_memories,
     log_intervention,
     update_intervention_response,
     get_recent_interventions,
@@ -417,7 +420,9 @@ async def get_report_summary(user_id: str):
 
     date_map: dict[str, dict] = {}
     for r in reports:
-        date_map[r["report_date"]] = r
+        dk = normalize_report_date_key(r.get("report_date"))
+        if dk:
+            date_map[dk] = r
 
     weekly_scores = []
     weekly_labels = []
@@ -454,6 +459,50 @@ async def get_report_summary(user_id: str):
 
     total_utterance = today_report.get("total_utterance", 0) if today_report else 0
 
+    # ── 회상 요법: 긍정 기억 + LLM 멘트 (실패 시 템플릿) ──
+    reminiscence: list[dict] = []
+    try:
+        memories = list_recent_memories(user_id, limit=50)
+        candidates = filter_positive_memory_candidates(memories, max_items=3)
+        messages = await generate_reminiscence_lines(candidates)
+        reminiscence = [
+            {
+                "date": c.get("memory_date"),
+                "content": c.get("content", ""),
+                "emotion": c.get("emotion", ""),
+                "message": msg,
+            }
+            for c, msg in zip(candidates, messages, strict=True)
+        ]
+    except Exception:
+        logger.exception("회상 기억 조회/생성 실패")
+
+    # ── 보호자 리포트: 최근 14일 마음 날씨 달력(mood_avg_score) + 월간 키워드 ──
+    care_calendar_month: dict = {
+        "kind": "14d",
+        "start_date": (today - timedelta(days=13)).isoformat(),
+        "end_date": today.isoformat(),
+        "days": [],
+    }
+    monthly_keywords: list[dict] = []
+    try:
+        since_14d = (today - timedelta(days=13)).isoformat()
+        cal_rows = get_daily_reports_since(user_id, since_14d, limit=20)
+        care_calendar_month = build_mood_weather_calendar_14d(today, cal_rows)
+    except Exception:
+        logger.exception("마음 날씨 달력 데이터 조회 실패")
+
+    try:
+        since_chat = month_start_iso_for_chat_filter(today.year, today.month)
+        chat_texts = get_user_messages_since(user_id, since_chat, limit=500)
+        monthly_keywords = await extract_monthly_keywords_with_llm(
+            chat_texts, top_n=5
+        )
+        if not monthly_keywords:
+            monthly_keywords = extract_monthly_keywords(chat_texts, top_n=5)
+    except Exception:
+        logger.exception("월간 키워드 조회 실패")
+
     return {
         "user_id": user_id,
         "care_level": care_level,
@@ -464,6 +513,9 @@ async def get_report_summary(user_id: str):
         "diff": diff,
         "diff_label": diff_label,
         "total_utterance": total_utterance,
+        "reminiscence": reminiscence,
+        "care_calendar_month": care_calendar_month,
+        "monthly_keywords": monthly_keywords,
     }
 
 
