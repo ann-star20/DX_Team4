@@ -2232,9 +2232,9 @@ async function loadProfile() {
     const p = await r.json();
     if (p.care_level) updateCareLevel(p.care_level);
 
-    // distress_score >= 40이면 긍정 회상 발화문으로 welcome bubble 교체
+    // distress_score >= 35(WARNING)이면 긍정 회상 발화문으로 welcome bubble 교체
     const distress = parseFloat(p.distress_score || 0);
-    if (distress >= 40) {
+    if (distress >= 35) {
       const localP = getProfile();
       const dn = encodeURIComponent(localP.displayName || '');
       fetch(`${API}/welcome/${uid}?display_name=${dn}`)

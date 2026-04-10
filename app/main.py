@@ -76,44 +76,57 @@ async def _background_extract(user_id: str) -> None:
             logger.exception("백그라운드 기억 추출 실패")
 
 
+def _save_assistant_message_bg(user_id: str, content: str) -> None:
+    """응답 전송 후 단기 로그에 봇 답변 저장."""
+    try:
+        save_chat_message(user_id, role="assistant", content=content)
+    except Exception:
+        logger.exception("어시스턴트 메시지 저장 실패 (백그라운드)")
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest, bg: BackgroundTasks):
-    """어르신 발화 → RAG 기반 공감형 답변 반환."""
-    try:
-        save_chat_message(req.user_id, role="user", content=req.message)
-    except Exception:
-        logger.exception("사용자 메시지 저장 실패")
-        raise HTTPException(status_code=502, detail="대화 저장에 실패했어요. 잠시 후 다시 시도해 주세요.")
+    """어르신 발화 → RAG 기반 공감형 답변 반환.
+
+    지연 단축: 사용자 메시지 저장과 RAG(임베딩→하이브리드 검색→답변 LLM)를 병렬 처리하고,
+    봇 답변 저장·장기기억 추출은 응답 직후 백그라운드에서 수행한다.
+    """
+    async def _save_user_message() -> None:
+        await asyncio.to_thread(
+            save_chat_message,
+            req.user_id,
+            "user",
+            req.message,
+        )
 
     try:
-        result = await empathetic_chat(
-            user_id=req.user_id,
-            message=req.message,
-            category=req.category,
-            emotion=req.emotion,
-            display_name=req.display_name,
-            gender=req.gender,
-            age=req.age,
-            avatar_id=req.avatar_id,
+        result, _ = await asyncio.gather(
+            empathetic_chat(
+                user_id=req.user_id,
+                message=req.message,
+                category=req.category,
+                emotion=req.emotion,
+                display_name=req.display_name,
+                gender=req.gender,
+                age=req.age,
+                avatar_id=req.avatar_id,
+            ),
+            _save_user_message(),
         )
     except Exception:
-        logger.exception("RAG 챗봇 응답 생성 실패")
+        logger.exception("RAG 챗봇 또는 사용자 메시지 저장 실패")
         raise HTTPException(status_code=502, detail="답변 생성에 실패했어요. 잠시 후 다시 시도해 주세요.")
-
-    try:
-        save_chat_message(req.user_id, role="assistant", content=result["answer"])
-    except Exception:
-        logger.exception("어시스턴트 메시지 저장 실패")
 
     detected_emotion = result.get("detected_emotion", "중립")
     try:
-        status = update_user_emotion(req.user_id, detected_emotion)
+        status = await asyncio.to_thread(update_user_emotion, req.user_id, detected_emotion)
         result["care_level"] = status["care_level"]
         result["distress_score"] = status["distress_score"]
         result["distress_score_daily"] = status["distress_score_daily"]
     except Exception:
         logger.exception("감정 점수 업데이트 실패")
 
+    bg.add_task(_save_assistant_message_bg, req.user_id, result["answer"])
     bg.add_task(_background_extract, req.user_id)
 
     return ChatResponse(**result)
@@ -286,8 +299,8 @@ async def morning_brief(
 async def welcome_message(user_id: str, display_name: str | None = None):
     """
     채팅 화면 첫 인사 말풍선용 발화문.
-    distress_score >= 40이면 장기기억(emotion 행복계열, importance >= 6)을 활용한
-    긍정 회상 발화문을 LLM으로 생성한다.
+    distress_score >= 35(WARNING 진입)이면 장기기억(emotion 행복계열, importance >= 6)을
+    활용한 긍정 회상 발화문을 LLM으로 생성한다.
     그 외에는 기본 인사 문구를 반환한다.
     """
     from app.database import get_senior_profile as _gsp
@@ -297,7 +310,7 @@ async def welcome_message(user_id: str, display_name: str | None = None):
     name = display_name or db_name or None
     name_str = f"{name} 님" if name else "어르신"
 
-    if distress >= 40:
+    if distress >= 35:
         msg = await generate_reminiscence_welcome(user_id, name)
         return {"message": msg, "reminiscence_mode": True, "distress_score": distress}
 

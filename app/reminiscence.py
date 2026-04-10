@@ -93,8 +93,8 @@ def build_morning_brief(
     """
     TV/아침 루틴용: effective_distress 구간에 따라 회상 후보 또는 보호자 알림.
 
-    - 41 <= effective < 80 (WARNING): 행복·고중요도 기억 목록
-    - effective >= 80 (DANGER): caregiver_alert, 오늘 일간 리포트 requires_check 갱신
+    - 35 <= effective < 65 (WARNING): 행복·고중요도 기억 목록
+    - effective >= 65 (DANGER): caregiver_alert, 오늘 일간 리포트 requires_check 갱신
     """
     profile = get_senior_profile(user_id)
     if not profile:
@@ -124,7 +124,7 @@ def build_morning_brief(
         "suggested_opening": None,
     }
 
-    if effective >= 80:
+    if effective >= 65:
         out["caregiver_alert"] = True
         out["reminiscence_mode"] = False
         today_str = date.today().isoformat()
@@ -153,13 +153,13 @@ def build_morning_brief(
             logger.exception("보호자 알림용 일간 리포트 갱신 실패 user=%s", user_id)
         logger.warning(
             "케어 DANGER(effective>=%s): 보호자 알림 플래그 user=%s eff=%.1f",
-            80,
+            65,
             user_id,
             effective,
         )
         return out
 
-    if 41 <= effective < 80:
+    if 35 <= effective < 65:
         out["reminiscence_mode"] = True
         rows = list_recent_memories(user_id, limit=memory_fetch_limit)
         memories = pick_happy_reminiscence_memories(

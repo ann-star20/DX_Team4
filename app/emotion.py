@@ -27,7 +27,7 @@ DISTRESS_MIN = -30
 DISTRESS_MAX = 100
 SESSION_SCORE_MIN = -10
 SESSION_SCORE_MAX = 10
-DAILY_DEFAULT = 20
+DAILY_DEFAULT = 50
 DAILY_MIN = 0
 DAILY_MAX = 100
 
@@ -49,8 +49,8 @@ EMOTION_SCORES: dict[str, int] = {
 DANGER_EMOTIONS = {"공포", "슬픔", "우울", "불안", "fear", "sadness"}
 
 CARE_THRESHOLDS = [
-    (80, "DANGER"),
-    (41, "WARNING"),
+    (65, "DANGER"),
+    (35, "WARNING"),
 ]
 
 
@@ -132,9 +132,21 @@ def update_user_emotion(user_id: str, emotion: str) -> dict:
     if last_msg.tzinfo is None:
         last_msg = last_msg.replace(tzinfo=timezone.utc)
 
+    session_closed = False          # 이번 호출에서 세션이 닫혔는지
+    closed_session_daily: float | None = None   # 닫힌 세션의 daily 스냅샷
+    closed_session_date: str | None = None      # 닫힌 세션이 속한 날짜
+
     # ── 1. 일간 감쇄 (Decay) ──────────────────────────────────────
     days_since_decay = (today - last_decay).days
     if days_since_decay >= 1:
+        # 전날 세션이 열려 있었다면 닫고, 해당 일자에 mood_avg 기록
+        closed_session_daily = daily
+        closed_session_date = last_decay.isoformat()
+        clamped = _clamp(session_score, SESSION_SCORE_MIN, SESSION_SCORE_MAX)
+        distress = _clamp(distress + clamped, DISTRESS_MIN, DISTRESS_MAX)
+        session_score = 0
+        session_closed = True
+
         for _ in range(days_since_decay):
             distress *= DECAY_RATE
         daily = DAILY_DEFAULT
@@ -142,11 +154,14 @@ def update_user_emotion(user_id: str, emotion: str) -> dict:
         last_decay = today
         logger.info("일간 감쇄: user=%s, days=%d, distress=%.1f", user_id, days_since_decay, distress)
 
-    # ── 2. 세션 경계 판정 (10분 침묵) ─────────────────────────────
-    if (now - last_msg) >= SESSION_GAP:
+    # ── 2. 세션 경계 판정 (10분 침묵, 같은 날) ────────────────────
+    if not session_closed and (now - last_msg) >= SESSION_GAP:
+        closed_session_daily = daily
+        closed_session_date = today_str
         clamped = _clamp(session_score, SESSION_SCORE_MIN, SESSION_SCORE_MAX)
         distress = _clamp(distress + clamped, DISTRESS_MIN, DISTRESS_MAX)
         session_score = 0
+        session_closed = True
         hours_idle = (now - last_msg).total_seconds() / 3600
         fatigue = _clamp(fatigue - (FATIGUE_DECAY_PER_HOUR * hours_idle), 0, 1)
         logger.info("세션 종료 정산: user=%s, delta=%.0f, distress=%.1f", user_id, clamped, distress)
@@ -160,14 +175,14 @@ def update_user_emotion(user_id: str, emotion: str) -> dict:
     effective = _clamp(effective, DISTRESS_MIN, DISTRESS_MAX)
     care_level = _compute_care_level(effective)
 
-    # ── 5. mood_state 결정 ────────────────────────────────────────
-    if daily <= 30:
+    # ── 5. mood_state 결정 (daily가 높을수록 distress가 큼) ────────
+    if daily >= 75:
         mood_state = "우울"
-    elif daily <= 45:
+    elif daily >= 60:
         mood_state = "적적함"
-    elif daily <= 55:
+    elif daily >= 40:
         mood_state = "보통"
-    elif daily <= 70:
+    elif daily >= 25:
         mood_state = "편안함"
     else:
         mood_state = "기분좋음"
@@ -187,7 +202,13 @@ def update_user_emotion(user_id: str, emotion: str) -> dict:
     upsert_senior_profile(user_id, profile_update)
 
     # ── 7. Daily Care Report 갱신 ─────────────────────────────────
-    _update_daily_report(user_id, today_str, emotion, daily, care_level)
+    # 7-a. 세션 종료 → mood_avg_score 업데이트 (세션 1건 = 샘플 1건)
+    if session_closed and closed_session_daily is not None:
+        _update_daily_report_session(
+            user_id, closed_session_date, closed_session_daily,
+        )
+    # 7-b. 매 발화 → 위험 카운트·발화수·care_level 등 갱신
+    _update_daily_report_utterance(user_id, today_str, emotion, care_level)
 
     logger.info(
         "감정 업데이트: user=%s, emo=%s(%+d), session=%.0f, "
@@ -198,14 +219,37 @@ def update_user_emotion(user_id: str, emotion: str) -> dict:
     return profile_update
 
 
-def _update_daily_report(
+def _update_daily_report_session(
+    user_id: str,
+    report_date: str,
+    session_daily: float,
+) -> None:
+    """세션 종료 시 mood_avg_score를 세션 단위 이동평균으로 갱신한다.
+    하루 N세션이면 N개 샘플만 평균에 반영 → 발화 수 편향 제거.
+    """
+    try:
+        existing = get_daily_report(user_id, report_date)
+        session_count = (existing.get("session_count") or 0) + 1 if existing else 1
+        prev_avg = float(existing.get("mood_avg_score") or DAILY_DEFAULT) if existing else DAILY_DEFAULT
+        new_avg = prev_avg + (session_daily - prev_avg) / session_count
+
+        upsert_daily_report(user_id, report_date, {
+            "mood_avg_score": round(new_avg, 2),
+            "session_count": session_count,
+        })
+    except Exception:
+        logger.exception("Daily Care Report 세션 mood_avg 갱신 실패")
+
+
+def _update_daily_report_utterance(
     user_id: str,
     report_date: str,
     emotion: str,
-    daily_score: float,
     care_level: str,
 ) -> None:
-    """일간 리포트를 해당 발화 감정으로 갱신한다."""
+    """매 발화마다 위험 카운트·발화수·care_level 등을 갱신한다.
+    mood_avg_score는 건드리지 않는다.
+    """
     try:
         existing = get_daily_report(user_id, report_date)
 
@@ -214,22 +258,23 @@ def _update_daily_report(
         if is_danger_emotion(emotion):
             danger += 1
 
-        prev_avg = float(existing.get("mood_avg_score") or DAILY_DEFAULT) if existing else DAILY_DEFAULT
-        new_avg = prev_avg + (daily_score - prev_avg) / total
-
         requires_check = care_level == "DANGER" or danger >= 3
 
         report_data = {
             "dominant_emotion": emotion,
-            "mood_avg_score": round(new_avg, 2),
             "today_care_level": care_level,
             "total_utterance": total,
             "danger_count": danger,
             "requires_check": requires_check,
         }
+
+        if not existing:
+            report_data["mood_avg_score"] = DAILY_DEFAULT
+            report_data["session_count"] = 0
+
         upsert_daily_report(user_id, report_date, report_data)
     except Exception:
-        logger.exception("Daily Care Report 갱신 실패")
+        logger.exception("Daily Care Report 발화 갱신 실패")
 
 
 def update_action_fatigue(user_id: str, response: str) -> float:
