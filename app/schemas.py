@@ -99,6 +99,19 @@ class ExtractMemoryResponse(BaseModel):
     memories: list[ExtractedMemoryItem] = Field(default_factory=list)
 
 
+# ── Schedule Parse ───────────────────────────────────────────────────
+
+class ParseScheduleRequest(BaseModel):
+    text: str = Field(..., description="사용자 발화 원문")
+
+
+class ParseScheduleResponse(BaseModel):
+    is_schedule: bool
+    time: Optional[str] = Field(None, description="HH:MM 24시간제. 시간 없으면 null")
+    desc: Optional[str] = Field(None, description="간결한 일정 설명")
+    recurring: bool = Field(False, description="매일/반복 루틴이면 true, 당일 일정이면 false")
+
+
 # ── Shared / Misc ────────────────────────────────────────────────────
 
 class ChatMessageOut(BaseModel):

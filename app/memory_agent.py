@@ -20,6 +20,9 @@ from app.schemas import ExtractionResult
 
 logger = logging.getLogger(__name__)
 
+# 한 번에 너무 많은 단기 로그를 넣으면 LLM 출력 JSON이 잘리거나 깨질 수 있어 청크로 나눈다.
+EXTRACTION_CHUNK_SIZE = 40
+
 EXTRACTION_SYSTEM_PROMPT = """# Role
 당신은 60대 이상 독거 어르신의 대화 이력을 분석하여, 장기 기억으로 저장할 가치가 있는 핵심 정보를 추출하는 '시니어 특화 데이터 추출 에이전트'입니다.
 
@@ -81,7 +84,7 @@ async def extract_memories(
         project=settings.gcp_project_id,
         location=settings.gcp_location,
         temperature=0.1,
-        max_output_tokens=2048,
+        max_output_tokens=8192,
         thinking_budget=0,
     )
     embeddings_model = GoogleGenerativeAIEmbeddings(
@@ -93,49 +96,61 @@ async def extract_memories(
     all_extracted: list[dict] = []
 
     for uid, msgs in grouped.items():
-        conv_text = _build_conversation_text(msgs)
-        prompt_text = (
-            f"{EXTRACTION_SYSTEM_PROMPT}\n\n"
-            f"# Conversation Logs\n{conv_text}"
-        )
+        for start in range(0, len(msgs), EXTRACTION_CHUNK_SIZE):
+            chunk = msgs[start : start + EXTRACTION_CHUNK_SIZE]
+            conv_text = _build_conversation_text(chunk)
+            prompt_text = (
+                f"{EXTRACTION_SYSTEM_PROMPT}\n\n"
+                f"# Conversation Logs\n{conv_text}"
+            )
 
-        try:
-            response = await llm.ainvoke(prompt_text)
-            raw = response.content.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            parsed = ExtractionResult.model_validate(json.loads(raw))
-        except Exception:
-            logger.exception("LLM 기억 추출 실패 (user_id=%s)", uid)
-            continue
-
-        for mem in parsed.memory:
             try:
-                emb = embeddings_model.embed_query(mem.content)
-
-                if check_duplicate_memory(uid, mem.content):
-                    logger.info("중복 기억 스킵: user_id=%s, content=%s", uid, mem.content[:40])
-                    continue
-
-                save_long_term_memory(
-                    user_id=uid,
-                    memory_date=mem.memory_date,
-                    content=mem.content,
-                    embedding=emb,
-                    metadata={
-                        "category": mem.category,
-                        "emotion": mem.emotion,
-                        "importance_score": mem.importance_score,
-                        "entity": mem.entity,
-                    },
-                )
-                all_extracted.append(mem.model_dump())
+                response = await llm.ainvoke(prompt_text)
+                raw = response.content.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+                parsed = ExtractionResult.model_validate(json.loads(raw))
             except Exception:
-                logger.exception("기억 저장 실패 (user_id=%s, content=%s)", uid, mem.content[:30])
+                logger.exception(
+                    "LLM 기억 추출 실패 (user_id=%s, chunk=%d~%d)",
+                    uid,
+                    start + 1,
+                    start + len(chunk),
+                )
                 continue
 
-        chat_ids = [m["chat_id"] for m in msgs]
-        mark_as_extracted(chat_ids)
-        logger.info("user_id=%s: %d건 대화에서 %d건 기억 추출 완료", uid, len(msgs), len(parsed.memory))
+            for mem in parsed.memory:
+                try:
+                    emb = embeddings_model.embed_query(mem.content)
+
+                    if check_duplicate_memory(uid, mem.content):
+                        logger.info("중복 기억 스킵: user_id=%s, content=%s", uid, mem.content[:40])
+                        continue
+
+                    save_long_term_memory(
+                        user_id=uid,
+                        memory_date=mem.memory_date,
+                        content=mem.content,
+                        embedding=emb,
+                        metadata={
+                            "category": mem.category,
+                            "emotion": mem.emotion,
+                            "importance_score": mem.importance_score,
+                            "entity": mem.entity,
+                        },
+                    )
+                    all_extracted.append(mem.model_dump())
+                except Exception:
+                    logger.exception("기억 저장 실패 (user_id=%s, content=%s)", uid, mem.content[:30])
+                    continue
+
+            chat_ids = [m["chat_id"] for m in chunk]
+            mark_as_extracted(chat_ids)
+            logger.info(
+                "user_id=%s: %d건 대화 청크에서 %d건 기억 추출 완료",
+                uid,
+                len(chunk),
+                len(parsed.memory),
+            )
 
     return all_extracted

@@ -152,6 +152,12 @@ body {
   border-radius: 4px; cursor: pointer; font-size: 13px; color: #999;
 }
 .sch-actions button:hover { background: rgba(0,0,0,0.08); color: var(--text); }
+.sch-badge-once {
+  display: inline-block; margin-left: 5px;
+  font-size: 11px; font-weight: 600; padding: 1px 5px;
+  border-radius: 8px; background: #ffe0b2; color: #e65100;
+  vertical-align: middle; line-height: 1.4;
+}
 
 .schedule-form {
   display: none; flex-direction: column; gap: 8px;
@@ -1426,12 +1432,32 @@ const schMicBtn = document.getElementById('schMicBtn');
 let scheduleData = JSON.parse(localStorage.getItem('scheduleItems') || 'null');
 if (!scheduleData) {
   scheduleData = [
-    { id: Date.now(), time: '09:00', desc: '아침 약 복용' },
-    { id: Date.now()+1, time: '13:00', desc: '점심 후 산책' },
-    { id: Date.now()+2, time: '18:00', desc: '저녁 약 복용' },
+    { id: Date.now(),   time: '09:00', desc: '아침 약 복용',  recurring: true },
+    { id: Date.now()+1, time: '13:00', desc: '점심 후 산책',  recurring: true },
+    { id: Date.now()+2, time: '18:00', desc: '저녁 약 복용',  recurring: true },
   ];
   localStorage.setItem('scheduleItems', JSON.stringify(scheduleData));
 }
+
+// 오늘 날짜 문자열 ("YYYY-MM-DD")
+function _todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// recurring=false이고 addedDate가 오늘이 아닌 항목 제거
+function purgeExpiredSchedules() {
+  const today = _todayStr();
+  const before = scheduleData.length;
+  scheduleData = scheduleData.filter(s => {
+    if (s.recurring !== false) return true;   // recurring 미설정(구항목) 또는 true → 유지
+    if (!s.addedDate) return true;            // 날짜 없는 구항목 → 유지
+    return s.addedDate === today;             // 오늘 추가된 것만 유지
+  });
+  if (scheduleData.length !== before) {
+    saveScheduleData();
+  }
+}
+purgeExpiredSchedules();
 
 let editingSchId = null;
 
@@ -1448,9 +1474,12 @@ function renderSchedule() {
     const isPast = item.time < nowHHMM;
     const el = document.createElement('div');
     el.className = 'schedule-item' + (isPast ? ' past' : '');
+    const recurBadge = (item.recurring === false && item.addedDate)
+      ? '<span class="sch-badge-once" title="오늘만">오늘</span>'
+      : '';
     el.innerHTML = `
       <span class="sch-time">${item.time}</span>
-      <span class="sch-text">${item.desc}</span>
+      <span class="sch-text">${item.desc}${recurBadge}</span>
       <span class="sch-actions">
         <button data-id="${item.id}" class="sch-edit" title="수정">✏️</button>
         <button data-id="${item.id}" class="sch-del" title="삭제">✕</button>
@@ -1498,7 +1527,7 @@ schSaveBtn.addEventListener('click', () => {
     const item = scheduleData.find(s => s.id === editingSchId);
     if (item) { item.time = time; item.desc = desc; }
   } else {
-    scheduleData.push({ id: Date.now(), time, desc });
+    scheduleData.push({ id: Date.now(), time, desc, recurring: true });
   }
   saveScheduleData();
   renderSchedule();
@@ -1523,75 +1552,37 @@ function deleteSchedule(id) {
   renderSchedule();
 }
 
-function _toHHMM(hour, minute) {
-  const h = Math.max(0, Math.min(23, Number(hour) || 0));
-  const m = Math.max(0, Math.min(59, Number(minute) || 0));
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+// 일정 추가 의도인지 빠르게 pre-check (LLM 호출 최소화)
+function _looksLikeScheduleRequest(text) {
+  return /(일정|루틴).*(추가|등록|넣어|만들어|추가해|등록해)|((추가|등록|넣어|만들어).*(일정|루틴))/.test(text);
 }
 
-function parseScheduleAddIntent(text) {
-  if (!text) return null;
-  const raw = text.trim();
-  const compact = raw.replace(/\s+/g, ' ');
-  const isAddIntent = /(일정|루틴).*(추가|등록|넣어|만들어)|((추가|등록|넣어|만들어).*(일정|루틴))/.test(compact);
-  if (!isAddIntent) return null;
+async function tryAddScheduleFromMessage(text) {
+  if (!text || !_looksLikeScheduleRequest(text)) return false;
 
-  let hour = null;
-  let minute = 0;
-  let meridiem = null; // am | pm | null
-
-  const hm = compact.match(/(\d{1,2})\s*[:시]\s*(\d{1,2})/);
-  if (hm) {
-    hour = Number(hm[1]);
-    minute = Number(hm[2]);
-  } else {
-    const hOnly = compact.match(/(\d{1,2})\s*시(?:\s*반)?/);
-    if (hOnly) {
-      hour = Number(hOnly[1]);
-      minute = /시\s*반/.test(compact) ? 30 : 0;
-    } else {
-      const hhmm = compact.match(/\b(\d{1,2})\s*:\s*(\d{2})\b/);
-      if (hhmm) {
-        hour = Number(hhmm[1]);
-        minute = Number(hhmm[2]);
-      }
-    }
+  let parsed = null;
+  try {
+    const res = await fetch(`${API}/parse-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (res.ok) parsed = await res.json();
+  } catch (e) {
+    console.warn('parse-schedule 실패', e);
   }
 
-  if (/(오전|아침|am)/i.test(compact)) meridiem = 'am';
-  if (/(오후|저녁|밤|pm)/i.test(compact)) meridiem = 'pm';
+  if (!parsed || !parsed.is_schedule) return false;
 
-  if (hour === null || Number.isNaN(hour) || hour < 0 || hour > 24) return null;
-  if (minute < 0 || minute > 59) return null;
-
-  if (meridiem === 'pm' && hour < 12) hour += 12;
-  if (meridiem === 'am' && hour === 12) hour = 0;
-  if (!meridiem && hour === 24) hour = 0;
-  if (hour > 23) return null;
-
-  let desc = compact
-    .replace(/(일정|루틴)/g, '')
-    .replace(/(추가|등록|넣어|만들어)(해줘|주세요|줘|해)?/g, '')
-    .replace(/(오전|오후|아침|저녁|밤|am|pm)/ig, '')
-    .replace(/\d{1,2}\s*:\s*\d{1,2}/g, '')
-    .replace(/\d{1,2}\s*시\s*\d{1,2}\s*분?/g, '')
-    .replace(/\d{1,2}\s*시(?:\s*반)?/g, '')
-    .replace(/\d{1,2}\s*분/g, '')
-    .replace(/[은는이가에로을를요.!?,]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (!desc) desc = '새 일정';
-  return { time: _toHHMM(hour, minute), desc };
-}
-
-function tryAddScheduleFromMessage(text) {
-  const parsed = parseScheduleAddIntent(text);
-  if (!parsed) return false;
-  scheduleData.push({ id: Date.now(), time: parsed.time, desc: parsed.desc });
+  const time = parsed.time || '00:00';
+  const desc = parsed.desc || '새 일정';
+  const recurring = Boolean(parsed.recurring);
+  const addedDate = recurring ? null : _todayStr();
+  scheduleData.push({ id: Date.now(), time, desc, recurring, addedDate });
   saveScheduleData();
   renderSchedule();
-  appendMsg('bot', `일정을 추가했어요. ${parsed.time} - ${parsed.desc}`);
+  const recurLabel = recurring ? ' (매일 반복)' : ' (오늘만)';
+  appendMsg('bot', `일정을 추가했어요! ${time} - ${desc}${recurLabel}`);
   return true;
 }
 
@@ -1877,7 +1868,7 @@ async function sendMessage(source = 'manual') {
   lastSentText = text;
   lastSentAt = Date.now();
 
-  if (tryAddScheduleFromMessage(text)) {
+  if (await tryAddScheduleFromMessage(text)) {
     msgInput.focus();
     return;
   }
@@ -2235,10 +2226,26 @@ document.querySelectorAll('.report-tab').forEach(tab => {
 // ── Load profile on start ────────────────
 async function loadProfile() {
   try {
-    const r = await fetch(`${API}/profile/${userIdEl.value.trim() || 'user_001'}`);
-    if (r.ok) {
-      const p = await r.json();
-      if (p.care_level) updateCareLevel(p.care_level);
+    const uid = userIdEl.value.trim() || 'user_001';
+    const r = await fetch(`${API}/profile/${uid}`);
+    if (!r.ok) return;
+    const p = await r.json();
+    if (p.care_level) updateCareLevel(p.care_level);
+
+    // distress_score >= 40이면 긍정 회상 발화문으로 welcome bubble 교체
+    const distress = parseFloat(p.distress_score || 0);
+    if (distress >= 40) {
+      const localP = getProfile();
+      const dn = encodeURIComponent(localP.displayName || '');
+      fetch(`${API}/welcome/${uid}?display_name=${dn}`)
+        .then(wr => wr.ok ? wr.json() : null)
+        .then(wd => {
+          if (wd && wd.message) {
+            const wb = document.getElementById('welcomeBubble');
+            if (wb) wb.textContent = wd.message;
+          }
+        })
+        .catch(() => {});
     }
   } catch(e) {}
 }
