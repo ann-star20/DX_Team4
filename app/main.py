@@ -28,22 +28,15 @@ from app.database import (
     update_intervention_response,
     get_recent_interventions,
 )
+from app.report_monthly_keywords_llm import extract_monthly_keywords_with_llm
+from app.report_caregiver_data import build_mood_weather_calendar_14d, extract_monthly_keywords, normalize_report_date_key, month_start_iso_for_chat_filter
+from app.report_reminiscence_llm import filter_positive_memory_candidates, generate_reminiscence_lines
 from app.emotion import update_user_emotion, update_action_fatigue
 from app.memory_agent import extract_memories
 from app.rag import empathetic_chat
 from app.stt import transcribe_bytes
 from app.reminiscence import build_morning_brief, generate_reminiscence_welcome
-from app.report_reminiscence_llm import (
-    filter_positive_memory_candidates,
-    generate_reminiscence_lines,
-)
-from app.report_monthly_keywords_llm import extract_monthly_keywords_with_llm
-from app.report_caregiver_data import (
-    build_mood_weather_calendar_14d,
-    extract_monthly_keywords,
-    month_start_iso_for_chat_filter,
-    normalize_report_date_key,
-)
+from app.config import get_settings
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -90,44 +83,57 @@ async def _background_extract(user_id: str) -> None:
             logger.exception("백그라운드 기억 추출 실패")
 
 
+def _save_assistant_message_bg(user_id: str, content: str) -> None:
+    """응답 전송 후 단기 로그에 봇 답변 저장."""
+    try:
+        save_chat_message(user_id, role="assistant", content=content)
+    except Exception:
+        logger.exception("어시스턴트 메시지 저장 실패 (백그라운드)")
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest, bg: BackgroundTasks):
-    """어르신 발화 → RAG 기반 공감형 답변 반환."""
-    try:
-        save_chat_message(req.user_id, role="user", content=req.message)
-    except Exception:
-        logger.exception("사용자 메시지 저장 실패")
-        raise HTTPException(status_code=502, detail="대화 저장에 실패했어요. 잠시 후 다시 시도해 주세요.")
+    """어르신 발화 → RAG 기반 공감형 답변 반환.
+
+    지연 단축: 사용자 메시지 저장과 RAG(임베딩→하이브리드 검색→답변 LLM)를 병렬 처리하고,
+    봇 답변 저장·장기기억 추출은 응답 직후 백그라운드에서 수행한다.
+    """
+    async def _save_user_message() -> None:
+        await asyncio.to_thread(
+            save_chat_message,
+            req.user_id,
+            "user",
+            req.message,
+        )
 
     try:
-        result = await empathetic_chat(
-            user_id=req.user_id,
-            message=req.message,
-            category=req.category,
-            emotion=req.emotion,
-            display_name=req.display_name,
-            gender=req.gender,
-            age=req.age,
-            avatar_id=req.avatar_id,
+        result, _ = await asyncio.gather(
+            empathetic_chat(
+                user_id=req.user_id,
+                message=req.message,
+                category=req.category,
+                emotion=req.emotion,
+                display_name=req.display_name,
+                gender=req.gender,
+                age=req.age,
+                avatar_id=req.avatar_id,
+            ),
+            _save_user_message(),
         )
     except Exception:
-        logger.exception("RAG 챗봇 응답 생성 실패")
+        logger.exception("RAG 챗봇 또는 사용자 메시지 저장 실패")
         raise HTTPException(status_code=502, detail="답변 생성에 실패했어요. 잠시 후 다시 시도해 주세요.")
-
-    try:
-        save_chat_message(req.user_id, role="assistant", content=result["answer"])
-    except Exception:
-        logger.exception("어시스턴트 메시지 저장 실패")
 
     detected_emotion = result.get("detected_emotion", "중립")
     try:
-        status = update_user_emotion(req.user_id, detected_emotion)
+        status = await asyncio.to_thread(update_user_emotion, req.user_id, detected_emotion)
         result["care_level"] = status["care_level"]
         result["distress_score"] = status["distress_score"]
         result["distress_score_daily"] = status["distress_score_daily"]
     except Exception:
         logger.exception("감정 점수 업데이트 실패")
 
+    bg.add_task(_save_assistant_message_bg, req.user_id, result["answer"])
     bg.add_task(_background_extract, req.user_id)
 
     return ChatResponse(**result)
@@ -300,8 +306,8 @@ async def morning_brief(
 async def welcome_message(user_id: str, display_name: str | None = None):
     """
     채팅 화면 첫 인사 말풍선용 발화문.
-    distress_score >= 40이면 장기기억(emotion 행복계열, importance >= 6)을 활용한
-    긍정 회상 발화문을 LLM으로 생성한다.
+    distress_score >= 35(WARNING 진입)이면 장기기억(emotion 행복계열, importance >= 6)을
+    활용한 긍정 회상 발화문을 LLM으로 생성한다.
     그 외에는 기본 인사 문구를 반환한다.
     """
     from app.database import get_senior_profile as _gsp
@@ -311,7 +317,7 @@ async def welcome_message(user_id: str, display_name: str | None = None):
     name = display_name or db_name or None
     name_str = f"{name} 님" if name else "어르신"
 
-    if distress >= 40:
+    if distress >= 35:
         msg = await generate_reminiscence_welcome(user_id, name)
         return {"message": msg, "reminiscence_mode": True, "distress_score": distress}
 
@@ -337,13 +343,14 @@ async def parse_schedule(body: ParseScheduleRequest):
     text = body.text.strip()
     if not text:
         return ParseScheduleResponse(is_schedule=False)
+    settings = get_settings()
 
-    prompt = f"""사용자 발화를 분석하여 일정 또는 루틴 추가 요청인지 판단하고, 맞다면 시간·설명·반복 여부를 추출하세요.
+    prompt = f"""사용자 발화를 분석하여 일정/루틴/할 일 추가 요청인지 판단하고, 맞다면 시간·설명·반복 여부를 추출하세요.
 
 사용자 발화: "{text}"
 
 출력 규칙:
-- is_schedule: 일정/루틴 추가 요청이면 true, 아니면 false
+- is_schedule: 일정/루틴/할 일 추가 요청이면 true, 아니면 false
 - time: "HH:MM" 24시간제. 시간 정보가 없으면 null
 - desc: 핵심 내용을 간결하게 요약 (조사·동사·키워드 제거, 명사 위주 5~12자 이내)
   좋은 예: "병원 진료", "혈압약 복용", "손녀에게 전화", "산책", "점심 식사"
@@ -363,6 +370,9 @@ async def parse_schedule(body: ParseScheduleRequest):
 
 입력: "날마다 저녁 7시에 손녀한테 전화하는 루틴 만들어줘"
 출력: {{"is_schedule": true, "time": "19:00", "desc": "손녀 전화", "recurring": true}}
+
+입력: "내 할 일에 매일 아침 7시 스트레칭 넣어줘"
+출력: {{"is_schedule": true, "time": "07:00", "desc": "아침 스트레칭", "recurring": true}}
 
 입력: "오늘 날씨 어때?"
 출력: {{"is_schedule": false, "time": null, "desc": null, "recurring": false}}"""

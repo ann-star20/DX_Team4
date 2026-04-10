@@ -1,8 +1,12 @@
 """
 Pipeline 2: Empathetic RAG Chat
-사용자 발화 → 하이브리드 검색(벡터 + GIN 메타데이터 via Supabase RPC) → 공감형 답변 생성.
+사용자 발화 → 쿼리 임베딩 → 하이브리드 검색(벡터 + GIN 메타데이터 via Supabase RPC) → 공감형 답변 생성.
+
+응답 지연을 줄이기 위해 검색 전 LLM 호출(키워드 추출)은 하지 않고, 경량 휴리스틱만 사용한다.
+장기기억 추출은 API 레이어에서 BackgroundTasks로 처리한다.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -118,33 +122,24 @@ def _get_embeddings_model() -> GoogleGenerativeAIEmbeddings:
     )
 
 
-_KEYWORD_PROMPT = (
-    "사용자 발화에서 검색에 쓸 핵심 명사·키워드(장소, 인물, 사물, 활동, 꽃 이름 등)를 "
-    "쉼표로 구분해 최대 5개 추출하세요. 동의어·유의어도 포함하세요.\n"
-    "발화: {q}\n키워드:"
-)
-
-
-async def _extract_query_entities(message: str) -> list[str]:
-    """사용자 발화에서 검색용 키워드를 빠르게 LLM 추출한다."""
-    settings = get_settings()
-    try:
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            project=settings.gcp_project_id,
-            location=settings.gcp_location,
-            temperature=0,
-            max_output_tokens=60,
-            thinking_budget=0,
-        )
-        resp = await llm.ainvoke(_KEYWORD_PROMPT.format(q=message))
-        raw = (resp.content or "").strip()
-        keywords = [k.strip() for k in raw.split(",") if k.strip()]
-        logger.info("쿼리 키워드 추출: %s → %s", message[:40], keywords)
-        return keywords[:5]
-    except Exception:
-        logger.warning("쿼리 키워드 추출 실패 — entity 없이 검색")
-        return []
+def _quick_entities_from_message(message: str) -> list[str] | None:
+    """
+    LLM 없이 하이브리드 검색의 메타데이터(entity) 힌트만 채운다.
+    검색 전 추가 왕복을 없애 응답을 앞당긴다.
+    """
+    if not message or not message.strip():
+        return None
+    parts = re.findall(r"[가-힣]{2,}|[A-Za-z]{3,}", message)
+    out: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+        if len(out) >= 5:
+            break
+    return out or None
 
 
 def _deduplicate(results: list[HybridSearchResult], similarity_threshold: float = 0.85) -> list[HybridSearchResult]:
@@ -288,16 +283,18 @@ async def empathetic_chat(
     settings = get_settings()
 
     emb_model = _get_embeddings_model()
-    query_embedding = emb_model.embed_query(message)
+    query_embedding = await emb_model.aembed_query(message)
 
-    query_entities = await _extract_query_entities(message)
+    query_entities = _quick_entities_from_message(message)
 
-    raw_results = hybrid_search(
-        user_id=user_id,
-        query_embedding=query_embedding,
+    # 동기 Supabase RPC — 이벤트 루프 블로킹 방지
+    raw_results = await asyncio.to_thread(
+        hybrid_search,
+        user_id,
+        query_embedding,
         category=category,
         emotion=emotion,
-        entities=query_entities or None,
+        entities=query_entities,
         top_k=fetch_k,
         vector_weight=vector_weight,
         metadata_weight=metadata_weight,
@@ -332,7 +329,7 @@ async def empathetic_chat(
     formatted = prompt.invoke(
         {"context": context_str, "question": message, "user_context": user_context}
     )
-    resp = llm.invoke(formatted.messages)
+    resp = await llm.ainvoke(formatted.messages)
     raw_answer = resp.content or ""
 
     if not raw_answer.strip():
