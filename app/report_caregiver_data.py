@@ -9,6 +9,26 @@ from typing import Any
 
 KST = timezone(timedelta(hours=9))
 
+def normalize_report_date_key(value: Any) -> str | None:
+    """
+    daily_care_report.report_date가 date·timestamp 문자열 등으로 올 때 YYYY-MM-DD로 통일.
+    (예: '2026-04-10T00:00:00', '2026-04-10T00:00:00+00:00' → '2026-04-10')
+    """
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        try:
+            iv = value.isoformat()
+            if isinstance(iv, str) and len(iv) >= 10:
+                return iv[:10]
+        except (TypeError, ValueError):
+            pass
+    s = str(value).strip()
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    return None
+
+
 _KR_STOP = frozenset(
     """
     은 는 이 가 을 를 에 의 와 과 도 만 보 다 때 거 등 좀 잘 게 음 응 그 이거 그거 저거 뭐
@@ -46,10 +66,9 @@ def build_mood_weather_calendar_14d(
     """
     score_by_date: dict[str, float | None] = {}
     for r in rows:
-        ds = r.get("report_date")
+        ds = normalize_report_date_key(r.get("report_date"))
         if not ds:
             continue
-        ds = str(ds)
         raw = r.get("mood_avg_score")
         if raw is None:
             score_by_date[ds] = None
