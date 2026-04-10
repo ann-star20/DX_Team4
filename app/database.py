@@ -231,11 +231,11 @@ def get_weekly_reports(user_id: str, limit: int = 7) -> list[dict]:
 
 
 def get_daily_reports_since(user_id: str, since_date: str, limit: int = 62) -> list[dict]:
-    """report_date >= since_date 인 일간 리포트 (오름차순). 달력용."""
+    """report_date >= since_date 인 일간 리포트 (오름차순). 달력·구간 조회용."""
     sb = get_supabase()
     result = (
         sb.table("daily_care_report")
-        .select("report_date, today_care_level")
+        .select("*")
         .eq("user_id", user_id)
         .gte("report_date", since_date)
         .order("report_date", desc=False)
