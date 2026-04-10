@@ -1565,7 +1565,7 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
         </div>
         <div class="bar-chart-v2" id="reportBarChart">
           <div class="bar-chart-v2-baseline"></div>
-          <div class="bar-chart-v2-baseline-label">40</div>
+          <!-- <div class="bar-chart-v2-baseline-label">40</div> -->
         </div>
       </div>
 
@@ -2505,7 +2505,7 @@ function renderBarChart(container, scores, labels) {
   container.innerHTML = `
     <div class="bar-chart-y-axis">${ticksHtml}</div>
     <div class="bar-chart-v2-baseline"></div>
-    <div class="bar-chart-v2-baseline-label">40</div>`;
+    <div class="bar-chart-v2-baseline-label"></div>`;
 
   scores.forEach((rawVal, i) => {
     const col = document.createElement('div');

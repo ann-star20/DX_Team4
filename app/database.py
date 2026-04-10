@@ -235,7 +235,7 @@ def get_daily_reports_since(user_id: str, since_date: str, limit: int = 62) -> l
     sb = get_supabase()
     result = (
         sb.table("daily_care_report")
-        .select("report_date, mood_avg_score")
+        .select("*")
         .eq("user_id", user_id)
         .gte("report_date", since_date)
         .order("report_date", desc=False)

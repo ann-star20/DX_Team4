@@ -42,6 +42,7 @@ from app.report_caregiver_data import (
     build_mood_weather_calendar_14d,
     extract_monthly_keywords,
     month_start_iso_for_chat_filter,
+    normalize_report_date_key,
 )
 from app.schemas import (
     ChatRequest,
@@ -412,7 +413,9 @@ async def get_report_summary(user_id: str):
 
     date_map: dict[str, dict] = {}
     for r in reports:
-        date_map[r["report_date"]] = r
+        dk = normalize_report_date_key(r.get("report_date"))
+        if dk:
+            date_map[dk] = r
 
     weekly_scores = []
     weekly_labels = []
