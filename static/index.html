@@ -1559,7 +1559,7 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
           <span class="icon">📈</span> 주간 정서 피로도 변화
           <span class="info-tooltip-wrap">
             <span class="info-btn">?</span>
-            <span class="info-tooltip-text">어르신의 억양, 톤, 발화 내용 등을 종합 분석하여 산출한 수치입니다. 범위는 -30~100이며, 40을 기준으로 낮을수록 정서적으로 여유 있는 상태, 높을수록 피로·긴장이 큰 상태에 가깝습니다.</span>
+            <span class="info-tooltip-text">어르신의 억양, 톤, 발화 내용 등을 종합 분석하여 산출한 수치입니다. 점수는 0~100으로 보여지며, 50점이 기준선(여유와 피로의 균형)이고, 낮을수록 여유, 높을수록 피로·긴장에 가깝습니다.</span>
           </span>
           <span class="report-section-sub">최근 7일 기준</span>
         </div>
@@ -1596,7 +1596,7 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
         <div class="report-section-title">
           <span class="icon">📅</span> 마음 날씨 달력
         </div>
-        <p class="care-calendar-hint">최근 14일간 일별 마음 점수를 바탕으로 평온·보통·주의를 표시해요. 기록이 없는 날은 회색으로 보여요.</p>
+        <!-- <p class="care-calendar-hint"></p> -->
         <div id="careCalendarMount"></div>
       </div>
       <div class="report-section">
@@ -2488,32 +2488,62 @@ const reportOverlay = document.getElementById('reportOverlay');
 const reportTriggerBtn = document.getElementById('reportTriggerBtn');
 const reportCloseBtn = document.getElementById('reportCloseBtn');
 
+/** DB·API 원점수(-30~100) → 화면 표시 0~100 (선형) */
+const MOOD_RAW_MIN = -30;
+const MOOD_RAW_MAX = 100;
+const MOOD_RAW_SPAN = MOOD_RAW_MAX - MOOD_RAW_MIN;
+/** 주간 정서 피로도 차트 기준선 (표시 0~100) */
+const FATIGUE_BASELINE_DISPLAY = 50;
+
+function moodRawToDisplay100(raw) {
+  if (raw == null || raw === '') return null;
+  const x = Number(raw);
+  if (!Number.isFinite(x)) return null;
+  const c = Math.max(MOOD_RAW_MIN, Math.min(MOOD_RAW_MAX, x));
+  return Math.round(((c + 30) / MOOD_RAW_SPAN) * 100);
+}
+
+function moodBucketFromDisplay100(disp) {
+  if (disp == null || !Number.isFinite(disp)) return null;
+  if (disp < 40) return 'CALM';
+  if (disp < 70) return 'FAIR';
+  return 'CAUTION';
+}
 
 function renderBarChart(container, scores, labels) {
-  const FATIGUE_MIN = -30;
-  const FATIGUE_MAX = 100;
-  const BASELINE = 40;
-  const RANGE_UP = FATIGUE_MAX - BASELINE;
-  const RANGE_DOWN = BASELINE - FATIGUE_MIN;
-  const MAX_HALF_PX = 80;
-  const SPAN = FATIGUE_MAX - FATIGUE_MIN;
-  const axisScores = [100, 70, 40, 10, -30];
+  const DISP_MIN = 0;
+  const DISP_MAX = 100;
+  const BAR_TOTAL_PX = 176;
+  const baselineDisp = FATIGUE_BASELINE_DISPLAY;
+  const RANGE_UP = DISP_MAX - baselineDisp;
+  const RANGE_DOWN = baselineDisp - DISP_MIN;
+  const hUpper = Math.round(((DISP_MAX - baselineDisp) / DISP_MAX) * BAR_TOTAL_PX);
+  const hLower = BAR_TOTAL_PX - hUpper;
+
+  const axisScores = [100, 75, 50, 25, 0];
   const ticksHtml = axisScores.map((sc) => {
-    const pct = ((FATIGUE_MAX - sc) / SPAN) * 100;
-    return `<span class="bar-y-tick" style="top:${pct}%">${sc}</span>`;
+    const px = ((DISP_MAX - sc) / DISP_MAX) * BAR_TOTAL_PX;
+    return `<span class="bar-y-tick" style="top:${px}px">${sc}</span>`;
   }).join('');
+
   container.innerHTML = `
     <div class="bar-chart-y-axis">${ticksHtml}</div>
     <div class="bar-chart-v2-baseline"></div>
     <div class="bar-chart-v2-baseline-label"></div>`;
 
+  const bl = container.querySelector('.bar-chart-v2-baseline');
+  const bll = container.querySelector('.bar-chart-v2-baseline-label');
+  if (bl) bl.style.top = `${hUpper}px`;
+  if (bll) bll.style.top = `${hUpper}px`;
+
   scores.forEach((rawVal, i) => {
     const col = document.createElement('div');
     col.className = 'bar-col-v2' + (i === scores.length - 1 ? ' today' : '');
 
-    const displayScore = rawVal != null ? Math.round(rawVal) : '-';
-    const v = rawVal != null ? Math.max(FATIGUE_MIN, Math.min(FATIGUE_MAX, rawVal)) : null;
-    const deviation = v != null ? v - BASELINE : 0;
+    const vDisp = moodRawToDisplay100(rawVal);
+    const displayScore = vDisp != null ? vDisp : '-';
+    const v = vDisp != null ? Math.max(DISP_MIN, Math.min(DISP_MAX, vDisp)) : null;
+    const deviation = v != null ? v - baselineDisp : 0;
     const isAbove = deviation >= 0;
     let absPct = 0;
     if (v != null) {
@@ -2521,13 +2551,14 @@ function renderBarChart(container, scores, labels) {
         ? Math.min(deviation / RANGE_UP, 1)
         : Math.min(Math.abs(deviation) / RANGE_DOWN, 1);
     }
-    const barH = Math.max(Math.round(absPct * MAX_HALF_PX), rawVal != null ? 4 : 0);
+    const maxHalf = isAbove ? hUpper : hLower;
+    const barH = Math.max(Math.round(absPct * maxHalf), rawVal != null ? 4 : 0);
 
     col.innerHTML = `
-      <div class="bar-half bar-half-upper">
+      <div class="bar-half bar-half-upper" style="height:${hUpper}px">
         ${isAbove && rawVal != null ? '<div class="bar-fill-up" style="height:0"></div>' : ''}
       </div>
-      <div class="bar-half bar-half-lower">
+      <div class="bar-half bar-half-lower" style="height:${hLower}px">
         ${!isAbove && rawVal != null ? '<div class="bar-fill-down" style="height:0"></div>' : ''}
       </div>
       <div class="bar-score-label">${displayScore}</div>
@@ -2545,7 +2576,6 @@ function renderEmotionWeather(todayScore, avg7d, diff) {
   const iconEl = document.getElementById('emotionWeatherIcon');
   const textEl = document.getElementById('emotionWeatherText');
   const subEl = document.getElementById('emotionWeatherSub');
-  const MOOD_MAX = 100;
 
   if (todayScore == null) {
     iconEl.textContent = '🌤';
@@ -2554,7 +2584,13 @@ function renderEmotionWeather(todayScore, avg7d, diff) {
     return;
   }
 
-  const s = Math.max(0, Math.min(MOOD_MAX, todayScore));
+  const s = moodRawToDisplay100(todayScore);
+  if (s == null) {
+    iconEl.textContent = '🌤';
+    textEl.textContent = '오늘 점수를 불러오지 못했어요.';
+    subEl.textContent = '';
+    return;
+  }
 
   let icon, text, moodWord;
   if (s < 40) {
@@ -2571,7 +2607,7 @@ function renderEmotionWeather(todayScore, avg7d, diff) {
     text = '오늘은 마음이 조금 지쳐 보이시네요. 가까운 분과 이야기를 나눠 보시는 건 어떨까요?';
   }
 
-  if (diff != null && avg7d != null) {
+  if (diff != null && avg7d != null && Number.isFinite(diff)) {
     if (diff > 15) {
       text = '지난주보다 오늘은 마음이 조금 더 무거워 보이시네요. 편하게 쉬어 가셔도 괜찮아요.';
     } else if (diff < -15) {
@@ -2667,7 +2703,8 @@ function renderCareCalendar(cal) {
   let html = `<div class="mood-calendar-14d-title">${rangeLine}</div>`;
   html += '<div class="mood-calendar-14d-grid">';
   cal.days.forEach((d) => {
-    const b = d.mood_bucket;
+    const disp = moodRawToDisplay100(d.score);
+    const b = disp != null ? moodBucketFromDisplay100(disp) : null;
     let extra = '';
     if (b === 'CALM') extra = 'calm';
     else if (b === 'FAIR') extra = 'fair';
