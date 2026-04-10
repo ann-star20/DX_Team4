@@ -1921,13 +1921,39 @@ function updateCareMessage(level, emotion) {
   careMessage.textContent = pool[Math.floor(Math.random() * pool.length)];
 }
 
+function _hangulCount(s) {
+  if (!s) return 0;
+  const m = s.match(/[가-힣]/g);
+  return m ? m.length : 0;
+}
+
+function _looksLikeMojibake(s) {
+  if (!s) return false;
+  // Common UTF-8-as-Latin1 mojibake fragments.
+  return /(?:Ã|Â|ì|ë|ê|í|ñ)/.test(s);
+}
+
+function normalizeKoreanText(text) {
+  if (typeof text !== 'string' || !text) return text;
+  if (!_looksLikeMojibake(text)) return text;
+  try {
+    const bytes = new Uint8Array(Array.from(text, (ch) => ch.charCodeAt(0) & 0xff));
+    const recovered = new TextDecoder('utf-8').decode(bytes);
+    // Only accept recovery when Hangul clearly improves.
+    if (_hangulCount(recovered) > _hangulCount(text)) return recovered;
+  } catch (e) {
+    // ignore recovery failure and return original text
+  }
+  return text;
+}
+
 // ── Render messages ──────────────────────
 function appendMsg(role, text) {
   const wrap = document.createElement('div');
   wrap.className = `msg ${role}`;
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text;
+  bubble.textContent = normalizeKoreanText(text);
   wrap.appendChild(bubble);
   chatArea.appendChild(wrap);
   scrollToBottom();
@@ -1948,7 +1974,7 @@ function appendBotMsg(data) {
   }
 
   const textNode = document.createElement('div');
-  textNode.textContent = data.answer;
+  textNode.textContent = normalizeKoreanText(data.answer);
   bubble.appendChild(textNode);
 
   if (data.retrieved_memories && data.retrieved_memories.length > 0) {
@@ -1957,7 +1983,9 @@ function appendBotMsg(data) {
     tag.textContent = `📌 참고 기억 ${data.retrieved_memories.length}건 보기`;
     const detail = document.createElement('div');
     detail.className = 'memories-detail';
-    detail.innerHTML = data.retrieved_memories.map(m => `• ${m}`).join('<br>');
+    detail.innerHTML = data.retrieved_memories
+      .map(m => `• ${normalizeKoreanText(String(m))}`)
+      .join('<br>');
     tag.addEventListener('click', () => detail.classList.toggle('open'));
     bubble.appendChild(tag);
     bubble.appendChild(detail);
