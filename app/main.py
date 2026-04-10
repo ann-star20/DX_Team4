@@ -30,6 +30,7 @@ from app.memory_agent import extract_memories
 from app.rag import empathetic_chat
 from app.stt import transcribe_bytes
 from app.reminiscence import build_morning_brief, generate_reminiscence_welcome
+from app.config import get_settings
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -336,13 +337,14 @@ async def parse_schedule(body: ParseScheduleRequest):
     text = body.text.strip()
     if not text:
         return ParseScheduleResponse(is_schedule=False)
+    settings = get_settings()
 
-    prompt = f"""사용자 발화를 분석하여 일정 또는 루틴 추가 요청인지 판단하고, 맞다면 시간·설명·반복 여부를 추출하세요.
+    prompt = f"""사용자 발화를 분석하여 일정/루틴/할 일 추가 요청인지 판단하고, 맞다면 시간·설명·반복 여부를 추출하세요.
 
 사용자 발화: "{text}"
 
 출력 규칙:
-- is_schedule: 일정/루틴 추가 요청이면 true, 아니면 false
+- is_schedule: 일정/루틴/할 일 추가 요청이면 true, 아니면 false
 - time: "HH:MM" 24시간제. 시간 정보가 없으면 null
 - desc: 핵심 내용을 간결하게 요약 (조사·동사·키워드 제거, 명사 위주 5~12자 이내)
   좋은 예: "병원 진료", "혈압약 복용", "손녀에게 전화", "산책", "점심 식사"
@@ -362,6 +364,9 @@ async def parse_schedule(body: ParseScheduleRequest):
 
 입력: "날마다 저녁 7시에 손녀한테 전화하는 루틴 만들어줘"
 출력: {{"is_schedule": true, "time": "19:00", "desc": "손녀 전화", "recurring": true}}
+
+입력: "내 할 일에 매일 아침 7시 스트레칭 넣어줘"
+출력: {{"is_schedule": true, "time": "07:00", "desc": "아침 스트레칭", "recurring": true}}
 
 입력: "오늘 날씨 어때?"
 출력: {{"is_schedule": false, "time": null, "desc": null, "recurring": false}}"""
