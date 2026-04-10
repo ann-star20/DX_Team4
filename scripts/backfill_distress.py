@@ -39,7 +39,7 @@ DECAY_RATE = 0.7
 SESSION_GAP = timedelta(minutes=10)
 DISTRESS_MIN, DISTRESS_MAX = -30.0, 100.0
 SESSION_MIN, SESSION_MAX = -10.0, 10.0
-DAILY_DEFAULT = 20.0
+DAILY_DEFAULT = 50.0
 DAILY_MIN, DAILY_MAX = 0.0, 100.0
 
 EMOTION_SCORES: dict[str, int] = {
@@ -54,7 +54,7 @@ EMOTION_SCORES: dict[str, int] = {
 
 DANGER_EMOTIONS = {"공포", "슬픔", "우울", "불안"}
 
-CARE_THRESHOLDS = [(80, "DANGER"), (41, "WARNING")]
+CARE_THRESHOLDS = [(65, "DANGER"), (35, "WARNING")]
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -69,13 +69,13 @@ def _care_level(score: float) -> str:
 
 
 def _mood_state(daily: float) -> str:
-    if daily <= 30:
+    if daily >= 75:
         return "우울"
-    if daily <= 45:
+    if daily >= 60:
         return "적적함"
-    if daily <= 55:
+    if daily >= 40:
         return "보통"
-    if daily <= 70:
+    if daily >= 25:
         return "편안함"
     return "기분좋음"
 
@@ -212,39 +212,45 @@ def main() -> None:
                 distress *= DECAY_RATE
             distress_daily = DAILY_DEFAULT
             last_decay_date = day
-            logger.info("[%s] 감쇄 적용(%d일) distress=%.2f, daily 리셋=20", day, days_gap, distress)
+            logger.info("[%s] 감쇄 적용(%d일) distress=%.2f, daily 리셋=50", day, days_gap, distress)
 
         # ── 해당 일자 메시지 처리 ────────────────────────────────
         day_utterances = 0
         day_danger_count = 0
         day_dominant_emotion = "중립"
-        mood_running_avg = distress_daily   # 첫 샘플 전 initial = daily 시작값
-        mood_sample_count = 0
+
+        # 세션 기반 mood_avg: 세션 종료 시점의 daily 값만 샘플로 사용
+        mood_session_avg = DAILY_DEFAULT
+        mood_session_count = 0
 
         for msg in day_messages:
             msg_at = to_kst(msg["chat_time"])
             emotion = detect_emotion(msg["content"], msg.get("emotion_label"))
             delta = EMOTION_SCORES.get(emotion, 0)
 
-            # 세션 경계 판정
+            # 세션 경계 판정 → 이전 세션의 daily 스냅샷을 mood 샘플로 기록
             if last_msg_at is not None and (msg_at - last_msg_at) >= SESSION_GAP:
+                # 세션 종료: 현재 daily를 샘플로 기록 (발화 처리 전)
+                mood_session_count += 1
+                mood_session_avg += (distress_daily - mood_session_avg) / mood_session_count
+
                 clamped = _clamp(session_score, SESSION_MIN, SESSION_MAX)
                 distress = _clamp(distress + clamped, DISTRESS_MIN, DISTRESS_MAX)
                 session_score = 0.0
-                logger.debug("  세션 종료 정산: distress=%.2f", distress)
+                logger.debug("  세션 종료 정산: distress=%.2f, session_daily=%.1f", distress, distress_daily)
 
             session_score += delta
             distress_daily = _clamp(distress_daily + delta, DAILY_MIN, DAILY_MAX)
-
-            # mood 이동 평균 (이 시점의 distress_daily 를 샘플로)
-            mood_sample_count += 1
-            mood_running_avg += (distress_daily - mood_running_avg) / mood_sample_count
 
             last_msg_at = msg_at
             day_utterances += 1
             if emotion in DANGER_EMOTIONS:
                 day_danger_count += 1
             day_dominant_emotion = emotion
+
+        # 해당 일자 마지막 세션 (아직 닫히지 않은 열린 세션)도 샘플로 기록
+        mood_session_count += 1
+        mood_session_avg += (distress_daily - mood_session_avg) / mood_session_count
 
         # effective distress = 현재 distress + 현재 세션 (클램프)
         effective = _clamp(
@@ -256,16 +262,17 @@ def main() -> None:
 
         upsert_daily_report(day, {
             "dominant_emotion": day_dominant_emotion,
-            "mood_avg_score": round(mood_running_avg, 2),
+            "mood_avg_score": round(mood_session_avg, 2),
             "today_care_level": care,
             "total_utterance": day_utterances,
             "danger_count": day_danger_count,
             "requires_check": requires_check,
+            "session_count": mood_session_count,
         })
         logger.info(
-            "[%s] utterances=%d, danger=%d, daily=%.1f, mood_avg=%.1f, distress=%.2f, session=%.1f, care=%s",
-            day, day_utterances, day_danger_count, distress_daily,
-            mood_running_avg, distress, session_score, care,
+            "[%s] utterances=%d, sessions=%d, danger=%d, daily=%.1f, mood_avg=%.1f, distress=%.2f, session=%.1f, care=%s",
+            day, day_utterances, mood_session_count, day_danger_count, distress_daily,
+            mood_session_avg, distress, session_score, care,
         )
 
     # ── 마지막 상태: senior_profile 업데이트 ─────────────────────────

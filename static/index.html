@@ -154,7 +154,7 @@ body {
 .sch-actions button:hover { background: rgba(0,0,0,0.08); color: var(--text); }
 .sch-badge-once {
   display: inline-block; margin-left: 5px;
-  font-size: 11px; font-weight: 600; padding: 1px 5px;
+  font-size: 16.5px; font-weight: 600; padding: 1px 5px;
   border-radius: 8px; background: #ffe0b2; color: #e65100;
   vertical-align: middle; line-height: 1.4;
 }
@@ -1867,7 +1867,82 @@ if (!scheduleData) {
 
 // 오늘 날짜 문자열 ("YYYY-MM-DD")
 function _todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function _dowNow() {
+  return new Date().getDay(); // 0:일 ~ 6:토
+}
+
+function _normalizeScheduleItems(items) {
+  return (items || []).map((s) => {
+    const copy = { ...s };
+    if (!copy.recurrenceType) {
+      // Backward compatibility with old recurring flag.
+      copy.recurrenceType = (copy.recurring === false) ? 'once' : 'daily';
+    }
+    if (copy.recurrenceType === 'weekly' && !Array.isArray(copy.weekdays)) {
+      copy.weekdays = [];
+    }
+    return copy;
+  });
+}
+
+scheduleData = _normalizeScheduleItems(scheduleData);
+saveScheduleData();
+
+const _WEEKDAY_MAP = { '일': 0, '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 };
+
+function _extractWeekdays(text) {
+  if (!text) return [];
+  const compact = text.replace(/\s+/g, '');
+  const set = new Set();
+  const rx = /([일월화수목금토])요일/g;
+  let m;
+  while ((m = rx.exec(compact)) !== null) {
+    const d = _WEEKDAY_MAP[m[1]];
+    if (d != null) set.add(d);
+  }
+  // Support compact expressions like "월수금", "화목", "월화수목금".
+  const compactWeekRuns = compact.match(/[일월화수목금토]{2,7}/g) || [];
+  compactWeekRuns.forEach((run) => {
+    [...run].forEach((ch) => {
+      const d = _WEEKDAY_MAP[ch];
+      if (d != null) set.add(d);
+    });
+  });
+  if (compact.includes('평일')) [1, 2, 3, 4, 5].forEach((d) => set.add(d));
+  if (compact.includes('주말')) [0, 6].forEach((d) => set.add(d));
+  return [...set].sort((a, b) => a - b);
+}
+
+function _weekdayLabel(days) {
+  if (!Array.isArray(days) || days.length === 0) return '';
+  const names = ['일', '월', '화', '수', '목', '금', '토'];
+  return days.map((d) => `${names[d]}요일`).join(', ');
+}
+
+function _nextDateForWeekday(targetDow) {
+  const now = new Date();
+  const cur = now.getDay();
+  let delta = targetDow - cur;
+  if (delta < 0) delta += 7;
+  const due = new Date(now);
+  due.setDate(now.getDate() + delta);
+  return due.toISOString().slice(0, 10);
+}
+
+function _isVisibleToday(item) {
+  const today = _todayStr();
+  const dow = _dowNow();
+  if (item.recurrenceType === 'daily') return true;
+  if (item.recurrenceType === 'weekly') return Array.isArray(item.weekdays) && item.weekdays.includes(dow);
+  if (item.recurrenceType === 'weekday_once') return item.dueDate === today;
+  return !item.addedDate || item.addedDate === today; // once
 }
 
 // recurring=false이고 addedDate가 오늘이 아닌 항목 제거
@@ -1875,9 +1950,13 @@ function purgeExpiredSchedules() {
   const today = _todayStr();
   const before = scheduleData.length;
   scheduleData = scheduleData.filter(s => {
-    if (s.recurring !== false) return true;   // recurring 미설정(구항목) 또는 true → 유지
-    if (!s.addedDate) return true;            // 날짜 없는 구항목 → 유지
-    return s.addedDate === today;             // 오늘 추가된 것만 유지
+    if (s.recurrenceType === 'daily' || s.recurrenceType === 'weekly') return true;
+    if (s.recurrenceType === 'weekday_once') {
+      if (!s.dueDate) return false;
+      return today <= s.dueDate; // 요일 당일까지 유지, 다음날 자동 삭제
+    }
+    if (!s.addedDate) return true;            // 날짜 없는 구항목(once) → 유지
+    return s.addedDate === today;             // once: 오늘 추가된 것만 유지
   });
   if (scheduleData.length !== before) {
     saveScheduleData();
@@ -1888,21 +1967,32 @@ purgeExpiredSchedules();
 let editingSchId = null;
 
 function renderSchedule() {
+  purgeExpiredSchedules();
   scheduleList.innerHTML = '';
-  if (scheduleData.length === 0) {
+  const visible = scheduleData.filter(_isVisibleToday);
+  if (visible.length === 0) {
     scheduleList.innerHTML = '<div class="schedule-empty">등록된 일정이 없습니다</div>';
     return;
   }
   const now = new Date();
   const nowHHMM = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-  const sorted = [...scheduleData].sort((a,b) => a.time.localeCompare(b.time));
+  const sorted = [...visible].sort((a,b) => a.time.localeCompare(b.time));
   sorted.forEach(item => {
     const isPast = item.time < nowHHMM;
     const el = document.createElement('div');
     el.className = 'schedule-item' + (isPast ? ' past' : '');
-    const recurBadge = (item.recurring === false && item.addedDate)
-      ? '<span class="sch-badge-once" title="오늘만">오늘</span>'
-      : '';
+    let recurBadge = '';
+    if (item.recurrenceType === 'daily') {
+      recurBadge = '<span class="sch-badge-once" title="매일 반복">매일</span>';
+    } else if (item.recurrenceType === 'weekly') {
+      const lbl = _weekdayLabel(item.weekdays);
+      recurBadge = `<span class="sch-badge-once" title="${lbl} 반복">요일</span>`;
+    } else if (item.recurrenceType === 'weekday_once') {
+      const lbl = _weekdayLabel(item.weekdays);
+      recurBadge = `<span class="sch-badge-once" title="${lbl} 하루만">요일 1회</span>`;
+    } else if (item.addedDate) {
+      recurBadge = '<span class="sch-badge-once" title="오늘만">오늘</span>';
+    }
     el.innerHTML = `
       <span class="sch-time">${item.time}</span>
       <span class="sch-text">${item.desc}${recurBadge}</span>
@@ -1953,7 +2043,7 @@ schSaveBtn.addEventListener('click', () => {
     const item = scheduleData.find(s => s.id === editingSchId);
     if (item) { item.time = time; item.desc = desc; }
   } else {
-    scheduleData.push({ id: Date.now(), time, desc, recurring: true });
+    scheduleData.push({ id: Date.now(), time, desc, recurrenceType: 'daily' });
   }
   saveScheduleData();
   renderSchedule();
@@ -1980,7 +2070,9 @@ function deleteSchedule(id) {
 
 // 일정 추가 의도인지 빠르게 pre-check (LLM 호출 최소화)
 function _looksLikeScheduleRequest(text) {
-  return /(일정|루틴).*(추가|등록|넣어|만들어|추가해|등록해)|((추가|등록|넣어|만들어).*(일정|루틴))/.test(text);
+  if (!text) return false;
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  return /((일정|루틴|할\s*일).*(추가|등록|넣어|넣어줘|만들어|추가해|등록해|추가해줘|등록해줘))|((추가|등록|넣어|넣어줘|만들어|추가해|등록해|추가해줘|등록해줘).*(일정|루틴|할\s*일))/.test(normalized);
 }
 
 async function tryAddScheduleFromMessage(text) {
@@ -2002,12 +2094,38 @@ async function tryAddScheduleFromMessage(text) {
 
   const time = parsed.time || '00:00';
   const desc = parsed.desc || '새 일정';
-  const recurring = Boolean(parsed.recurring);
-  const addedDate = recurring ? null : _todayStr();
-  scheduleData.push({ id: Date.now(), time, desc, recurring, addedDate });
+  const weekdays = _extractWeekdays(text);
+  const compact = text.replace(/\s+/g, '');
+  const isDaily = /(매일|날마다|매일매일|everyday|every day|daily|항상)/i.test(compact);
+  const hasWeeklyCue = /(매주|주마다|매주마다|매주에|매주도)/.test(compact);
+
+  let recurrenceType = 'once';
+  let dueDate = null;
+  if (isDaily || (Boolean(parsed.recurring) && weekdays.length === 0)) {
+    recurrenceType = 'daily';
+  } else if (weekdays.length > 0 && (hasWeeklyCue || Boolean(parsed.recurring))) {
+    recurrenceType = 'weekly';
+  } else if (weekdays.length > 0) {
+    recurrenceType = 'weekday_once';
+    dueDate = _nextDateForWeekday(weekdays[0]);
+  }
+
+  const addedDate = recurrenceType === 'once' ? _todayStr() : null;
+  scheduleData.push({
+    id: Date.now(),
+    time,
+    desc,
+    recurrenceType,
+    weekdays,
+    dueDate,
+    addedDate,
+  });
   saveScheduleData();
   renderSchedule();
-  const recurLabel = recurring ? ' (매일 반복)' : ' (오늘만)';
+  let recurLabel = ' (오늘만)';
+  if (recurrenceType === 'daily') recurLabel = ' (매일 반복)';
+  else if (recurrenceType === 'weekly') recurLabel = ` (${_weekdayLabel(weekdays)} 반복)`;
+  else if (recurrenceType === 'weekday_once') recurLabel = ` (${_weekdayLabel(weekdays)}에 1회)`;
   appendMsg('bot', `일정을 추가했어요! ${time} - ${desc}${recurLabel}`);
   return true;
 }
@@ -2090,7 +2208,8 @@ alarmDismissBtn.addEventListener('click', () => {
 function checkScheduleAlarms() {
   const now = new Date();
   const nowHHMM = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-  scheduleData.forEach(item => {
+  const visible = scheduleData.filter(_isVisibleToday);
+  visible.forEach(item => {
     const key = item.id + '_' + item.time;
     if (item.time === nowHHMM && !alarmFiredSet.has(key)) {
       alarmFiredSet.add(key);
@@ -2332,13 +2451,39 @@ function updateCareMessage(level, emotion) {
   careMessage.textContent = pool[Math.floor(Math.random() * pool.length)];
 }
 
+function _hangulCount(s) {
+  if (!s) return 0;
+  const m = s.match(/[가-힣]/g);
+  return m ? m.length : 0;
+}
+
+function _looksLikeMojibake(s) {
+  if (!s) return false;
+  // Common UTF-8-as-Latin1 mojibake fragments.
+  return /(?:Ã|Â|ì|ë|ê|í|ñ)/.test(s);
+}
+
+function normalizeKoreanText(text) {
+  if (typeof text !== 'string' || !text) return text;
+  if (!_looksLikeMojibake(text)) return text;
+  try {
+    const bytes = new Uint8Array(Array.from(text, (ch) => ch.charCodeAt(0) & 0xff));
+    const recovered = new TextDecoder('utf-8').decode(bytes);
+    // Only accept recovery when Hangul clearly improves.
+    if (_hangulCount(recovered) > _hangulCount(text)) return recovered;
+  } catch (e) {
+    // ignore recovery failure and return original text
+  }
+  return text;
+}
+
 // ── Render messages ──────────────────────
 function appendMsg(role, text) {
   const wrap = document.createElement('div');
   wrap.className = `msg ${role}`;
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text;
+  bubble.textContent = normalizeKoreanText(text);
   wrap.appendChild(bubble);
   chatArea.appendChild(wrap);
   scrollToBottom();
@@ -2359,7 +2504,7 @@ function appendBotMsg(data) {
   }
 
   const textNode = document.createElement('div');
-  textNode.textContent = data.answer;
+  textNode.textContent = normalizeKoreanText(data.answer);
   bubble.appendChild(textNode);
 
   if (data.retrieved_memories && data.retrieved_memories.length > 0) {
@@ -2368,7 +2513,9 @@ function appendBotMsg(data) {
     tag.textContent = `📌 참고 기억 ${data.retrieved_memories.length}건 보기`;
     const detail = document.createElement('div');
     detail.className = 'memories-detail';
-    detail.innerHTML = data.retrieved_memories.map(m => `• ${m}`).join('<br>');
+    detail.innerHTML = data.retrieved_memories
+      .map(m => `• ${normalizeKoreanText(String(m))}`)
+      .join('<br>');
     tag.addEventListener('click', () => detail.classList.toggle('open'));
     bubble.appendChild(tag);
     bubble.appendChild(detail);
@@ -2813,9 +2960,9 @@ async function loadProfile() {
     const p = await r.json();
     if (p.care_level) updateCareLevel(p.care_level);
 
-    // distress_score >= 40이면 긍정 회상 발화문으로 welcome bubble 교체
+    // distress_score >= 35(WARNING)이면 긍정 회상 발화문으로 welcome bubble 교체
     const distress = parseFloat(p.distress_score || 0);
-    if (distress >= 40) {
+    if (distress >= 35) {
       const localP = getProfile();
       const dn = encodeURIComponent(localP.displayName || '');
       fetch(`${API}/welcome/${uid}?display_name=${dn}`)
