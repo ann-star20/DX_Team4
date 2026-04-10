@@ -952,9 +952,9 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
   background: #ddd8d4;
   flex-shrink: 0;
 }
-.care-cal-dot.normal { background: #a5d6a7; }
-.care-cal-dot.warning { background: #ffcc80; }
-.care-cal-dot.danger { background: #ef9a9a; }
+.care-cal-dot.calm { background: #81c784; }
+.care-cal-dot.fair { background: #ffd54f; }
+.care-cal-dot.caution { background: #e57373; }
 .care-calendar-legend {
   display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px;
   font-size: 11px; color: var(--text-light);
@@ -964,9 +964,36 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
   display: inline-block; width: 10px; height: 10px; border-radius: 3px;
   background: #ddd8d4;
 }
-.care-calendar-legend i.l-n { background: #a5d6a7; }
-.care-calendar-legend i.l-w { background: #ffcc80; }
-.care-calendar-legend i.l-d { background: #ef9a9a; }
+.care-calendar-legend i.l-calm { background: #81c784; }
+.care-calendar-legend i.l-fair { background: #ffd54f; }
+.care-calendar-legend i.l-caution { background: #e57373; }
+.mood-calendar-14d-title {
+  font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--text);
+}
+.mood-calendar-14d-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.mood-cal-cell-14d {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px 8px;
+  border-radius: 8px;
+  background: #f8f6f4;
+  box-sizing: border-box;
+  min-height: 52px;
+  justify-content: flex-end;
+}
+.mood-cal-cell-14d .mood-cal-dow {
+  font-size: 9px; color: #a09894; font-weight: 600;
+}
+.mood-cal-cell-14d .mood-cal-dom {
+  font-size: 11px; color: var(--text); font-weight: 700;
+}
+.mood-cal-cell-14d .care-cal-dot { margin-top: 2px; }
 .report-keywords-body {
   font-size: 15px; line-height: 1.75;
   color: var(--text);
@@ -1162,14 +1189,32 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
 .bar-chart-v2 {
   display: flex;
   gap: 6px;
-  height: 220px;
+  min-height: 212px;
   position: relative;
-  padding: 0 4px 0 28px;
+  padding: 0 6px 4px 38px;
+}
+.bar-chart-y-axis {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 176px;
+  pointer-events: none;
+  z-index: 1;
+}
+.bar-y-tick {
+  position: absolute;
+  right: 2px;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: #9e9e9e;
+  line-height: 1;
 }
 .bar-chart-v2-baseline {
   position: absolute;
-  left: 28px; right: 4px;
-  top: calc(16px + 88px);
+  left: 38px; right: 6px;
+  top: 88px;
   height: 0;
   border-top: 2px dashed #c4b8b0;
   z-index: 1;
@@ -1177,11 +1222,11 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
 }
 .bar-chart-v2-baseline-label {
   position: absolute;
-  left: 4px;
-  top: calc(16px + 88px);
+  left: 2px;
+  top: 88px;
   transform: translateY(-50%);
-  font-size: 10px;
-  color: #999;
+  font-size: 9px;
+  color: #9e9e9e;
   font-weight: 600;
 }
 .bar-col-v2 {
@@ -1193,12 +1238,13 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
   z-index: 2;
 }
 .bar-score-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--text-light);
-  height: 16px;
-  line-height: 16px;
+  color: var(--text);
+  line-height: 1.2;
   text-align: center;
+  margin-top: 2px;
+  min-height: 14px;
 }
 .bar-half {
   width: 100%;
@@ -1237,7 +1283,7 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
 .bar-label-v2 {
   font-size: 11px;
   color: var(--text-light);
-  margin-top: 6px;
+  margin-top: 4px;
   font-weight: 500;
 }
 .bar-col-v2.today .bar-label-v2 { color: var(--primary); font-weight: 700; }
@@ -1526,7 +1572,7 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
       <div class="report-panel-senior" id="reportPanelSenior">
       <div class="report-section">
         <div class="report-section-title">
-          <span class="icon">🌤</span> 오늘의 정서 피로도
+          <span class="icon">🌤</span> 오늘의 마음 날씨 지수
         </div>
         <div class="emotion-weather-card">
           <div class="weather-icon-large" id="emotionWeatherIcon">🌤</div>
@@ -1548,9 +1594,9 @@ body[data-care-level] .msg.user .bubble { background: #4caf50; }
       <div class="report-panel-caregiver" id="reportPanelCaregiver">
       <div class="report-section">
         <div class="report-section-title">
-          <span class="icon">📅</span> 이번 달 케어 등급 달력
+          <span class="icon">📅</span> 마음 날씨 달력
         </div>
-        <p class="care-calendar-hint">날짜별 정서 케어 등급을 한눈에 볼 수 있어요. 주말이나 특정 시기에 흐름이 달라졌는지 확인해 보세요.</p>
+        <p class="care-calendar-hint">최근 14일간 일별 마음 점수를 바탕으로 평온·보통·주의를 표시해요. 기록이 없는 날은 회색으로 보여요.</p>
         <div id="careCalendarMount"></div>
       </div>
       <div class="report-section">
@@ -2450,7 +2496,16 @@ function renderBarChart(container, scores, labels) {
   const RANGE_UP = FATIGUE_MAX - BASELINE;
   const RANGE_DOWN = BASELINE - FATIGUE_MIN;
   const MAX_HALF_PX = 80;
-  container.innerHTML = '<div class="bar-chart-v2-baseline"></div><div class="bar-chart-v2-baseline-label">40</div>';
+  const SPAN = FATIGUE_MAX - FATIGUE_MIN;
+  const axisScores = [100, 70, 40, 10, -30];
+  const ticksHtml = axisScores.map((sc) => {
+    const pct = ((FATIGUE_MAX - sc) / SPAN) * 100;
+    return `<span class="bar-y-tick" style="top:${pct}%">${sc}</span>`;
+  }).join('');
+  container.innerHTML = `
+    <div class="bar-chart-y-axis">${ticksHtml}</div>
+    <div class="bar-chart-v2-baseline"></div>
+    <div class="bar-chart-v2-baseline-label">40</div>`;
 
   scores.forEach((rawVal, i) => {
     const col = document.createElement('div');
@@ -2469,13 +2524,13 @@ function renderBarChart(container, scores, labels) {
     const barH = Math.max(Math.round(absPct * MAX_HALF_PX), rawVal != null ? 4 : 0);
 
     col.innerHTML = `
-      <div class="bar-score-label">${displayScore}</div>
       <div class="bar-half bar-half-upper">
         ${isAbove && rawVal != null ? '<div class="bar-fill-up" style="height:0"></div>' : ''}
       </div>
       <div class="bar-half bar-half-lower">
         ${!isAbove && rawVal != null ? '<div class="bar-fill-down" style="height:0"></div>' : ''}
       </div>
+      <div class="bar-score-label">${displayScore}</div>
       <div class="bar-label-v2">${labels[i]}</div>`;
 
     container.appendChild(col);
@@ -2490,9 +2545,7 @@ function renderEmotionWeather(todayScore, avg7d, diff) {
   const iconEl = document.getElementById('emotionWeatherIcon');
   const textEl = document.getElementById('emotionWeatherText');
   const subEl = document.getElementById('emotionWeatherSub');
-  const FATIGUE_MIN = -30;
-  const FATIGUE_MAX = 100;
-  const BASELINE = 40;
+  const MOOD_MAX = 100;
 
   if (todayScore == null) {
     iconEl.textContent = '🌤';
@@ -2501,17 +2554,20 @@ function renderEmotionWeather(todayScore, avg7d, diff) {
     return;
   }
 
-  const s = Math.max(FATIGUE_MIN, Math.min(FATIGUE_MAX, todayScore));
+  const s = Math.max(0, Math.min(MOOD_MAX, todayScore));
 
-  let icon, text;
-  if (s <= BASELINE) {
+  let icon, text, moodWord;
+  if (s < 40) {
     icon = '☀️';
+    moodWord = '맑음';
     text = '오늘은 마음이 맑고 편안해 보이시네요. 이 기분 오래 유지하시길 바랄게요!';
-  } else if (s <= 70) {
+  } else if (s < 70) {
     icon = '⛅';
+    moodWord = '구름 조금';
     text = '오늘은 마음에 구름이 살짝 낀 것 같아요. 좋아하시는 것을 하시며 쉬어 보세요.';
   } else {
     icon = '🌧️';
+    moodWord = '흐림';
     text = '오늘은 마음이 조금 지쳐 보이시네요. 가까운 분과 이야기를 나눠 보시는 건 어떨까요?';
   }
 
@@ -2520,17 +2576,13 @@ function renderEmotionWeather(todayScore, avg7d, diff) {
       text = '지난주보다 오늘은 마음이 조금 더 무거워 보이시네요. 편하게 쉬어 가셔도 괜찮아요.';
     } else if (diff < -15) {
       text = '지난주보다 한결 가벼운 마음이시네요! 오늘도 좋은 하루 보내세요.';
-      if (s <= BASELINE) icon = '☀️';
+      if (s < 40) icon = '☀️';
     }
   }
 
   iconEl.textContent = icon;
   textEl.textContent = text;
-
-  const span = FATIGUE_MAX - FATIGUE_MIN;
-  const tempScore = Math.round(((FATIGUE_MAX - s) / span) * 100);
-  const weatherLabel = s <= BASELINE ? '맑음' : s <= 70 ? '흐림' : '비';
-  subEl.textContent = `마음 온도: ${tempScore}° · ${weatherLabel}`;
+  subEl.textContent = `마음 온도: ${moodWord}`;
 }
 
 function renderReminiscence(memories) {
@@ -2598,29 +2650,36 @@ function renderCareCalendar(cal) {
   const mount = document.getElementById('careCalendarMount');
   if (!mount) return;
   if (!cal || !Array.isArray(cal.days) || cal.days.length === 0) {
-    mount.innerHTML = '<p class="report-keywords-empty">이번 달 일간 케어 기록이 아직 없어요.</p>';
+    mount.innerHTML = '<p class="report-keywords-empty">최근 14일간 표시할 기록이 없어요.</p>';
     return;
   }
-  const firstWd = Number(cal.first_weekday_js) || 0;
-  const monthTitle = `${cal.year}년 ${cal.month}월`;
-  const labels = ['일', '월', '화', '수', '목', '금', '토'];
-  let html = `<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text);">${monthTitle}</div>`;
-  html += '<div class="care-calendar-weekdays">';
-  labels.forEach((l) => { html += `<div>${l}</div>`; });
-  html += '</div><div class="care-calendar-grid">';
-  for (let i = 0; i < firstWd; i++) {
-    html += '<div class="care-cal-cell is-empty"></div>';
-  }
+
+  const fmt = (iso) => {
+    if (!iso) return '';
+    const p = iso.split('-');
+    if (p.length !== 3) return iso;
+    return `${Number(p[1])}월 ${Number(p[2])}일`;
+  };
+  const rangeLine = cal.start_date && cal.end_date
+    ? `${fmt(cal.start_date)} ~ ${fmt(cal.end_date)}`
+    : '최근 14일';
+
+  let html = `<div class="mood-calendar-14d-title">${rangeLine}</div>`;
+  html += '<div class="mood-calendar-14d-grid">';
   cal.days.forEach((d) => {
-    const level = d.level;
+    const b = d.mood_bucket;
     let extra = '';
-    if (level === 'NORMAL') extra = 'normal';
-    else if (level === 'WARNING') extra = 'warning';
-    else if (level === 'DANGER') extra = 'danger';
-    html += `<div class="care-cal-cell"><span class="care-cal-day">${d.day}</span><span class="care-cal-dot ${extra}"></span></div>`;
+    if (b === 'CALM') extra = 'calm';
+    else if (b === 'FAIR') extra = 'fair';
+    else if (b === 'CAUTION') extra = 'caution';
+    html += `<div class="mood-cal-cell-14d">
+      <span class="mood-cal-dow">${d.weekday || ''}</span>
+      <span class="mood-cal-dom">${d.day != null ? d.day : ''}</span>
+      <span class="care-cal-dot ${extra}"></span>
+    </div>`;
   });
   html += '</div>';
-  html += '<div class="care-calendar-legend"><span><i class="l-n"></i>정상</span><span><i class="l-w"></i>주의</span><span><i class="l-d"></i>위험</span><span><i></i>기록 없음</span></div>';
+  html += '<div class="care-calendar-legend"><span><i class="l-calm"></i>평온</span><span><i class="l-fair"></i>보통</span><span><i class="l-caution"></i>주의</span><span><i></i>기록 없음</span></div>';
   mount.innerHTML = html;
 }
 

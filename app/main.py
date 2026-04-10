@@ -39,7 +39,7 @@ from app.report_reminiscence_llm import (
 )
 from app.report_monthly_keywords_llm import extract_monthly_keywords_with_llm
 from app.report_caregiver_data import (
-    build_care_calendar_month,
+    build_mood_weather_calendar_14d,
     extract_monthly_keywords,
     month_start_iso_for_chat_filter,
 )
@@ -467,20 +467,20 @@ async def get_report_summary(user_id: str):
     except Exception:
         logger.exception("회상 기억 조회/생성 실패")
 
-    # ── 보호자 리포트: 이번 달 감정 달력 + 월간 키워드 ──
+    # ── 보호자 리포트: 최근 14일 마음 날씨 달력(mood_avg_score) + 월간 키워드 ──
     care_calendar_month: dict = {
-        "year": today.year,
-        "month": today.month,
-        "first_weekday_js": 0,
+        "kind": "14d",
+        "start_date": (today - timedelta(days=13)).isoformat(),
+        "end_date": today.isoformat(),
         "days": [],
     }
     monthly_keywords: list[dict] = []
     try:
-        month_start = today.replace(day=1).isoformat()
-        cal_rows = get_daily_reports_since(user_id, month_start, limit=62)
-        care_calendar_month = build_care_calendar_month(today, cal_rows)
+        since_14d = (today - timedelta(days=13)).isoformat()
+        cal_rows = get_daily_reports_since(user_id, since_14d, limit=20)
+        care_calendar_month = build_mood_weather_calendar_14d(today, cal_rows)
     except Exception:
-        logger.exception("감정 달력 데이터 조회 실패")
+        logger.exception("마음 날씨 달력 데이터 조회 실패")
 
     try:
         since_chat = month_start_iso_for_chat_filter(today.year, today.month)
