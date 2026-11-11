@@ -1,0 +1,6 @@
+# Optional emotion inference dependencies; install a hardware-compatible PyTorch build.
+torch>=2.2
+transformers>=4.46,<5
+peft>=0.13
+accelerate>=0.34
+# QLoRA HF adapters may additionally require a compatible bitsandbytes build.

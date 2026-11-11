@@ -22,3 +22,31 @@ __pycache__/
 *.log
 *.tmp
 models/
+# Local credentials and private runtime data
+credentials/
+secrets/
+service-account*.json
+*-service-account.json
+*.pem
+*.key
+.aws/
+.codex/
+.agents/
+
+# Local portfolio exports and internal/generated drafts
+/portfolio.html
+/portpolio.html
+/architecture.html
+/tech.html
+/notion-daily-system.md
+/outputs-all/
+/모델_스크립트/
+/코드기반_분석_MD/
+
+# Training/runtime artifacts (not redistribution assets)
+/data/
+/checkpoints/
+/recordings/
+*.sqlite
+*.sqlite3
+*.dump
